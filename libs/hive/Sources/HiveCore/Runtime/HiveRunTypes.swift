@@ -42,16 +42,3 @@ public struct HiveRunHandle<Schema: HiveSchema>: Sendable {
         self.outcome = outcome
     }
 }
-
-/// Context passed to Schema.inputWrites before step 0.
-public struct HiveInputContext: Sendable {
-    public let threadID: HiveThreadID
-    public let runID: HiveRunID
-    public let stepIndex: Int
-
-    public init(threadID: HiveThreadID, runID: HiveRunID, stepIndex: Int) {
-        self.threadID = threadID
-        self.runID = runID
-        self.stepIndex = stepIndex
-    }
-}
