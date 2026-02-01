@@ -32,8 +32,10 @@ internal final class HiveEventStreamController: @unchecked Sendable {
     }
 
     func makeStream() -> AsyncThrowingStream<HiveEvent, Error> {
-        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingOldest(0)) { continuation in
-            Task {
+        // Avoid relying on the consumer being *exactly* awaiting at yield time, which can amplify droppable drops
+        // under small `capacity` values. The runtime's own queue remains the source of truth for capacity.
+        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingOldest(1)) { continuation in
+            Task.detached(priority: .userInitiated) {
                 await self.pump(into: continuation)
             }
         }
@@ -64,7 +66,8 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         kind: HiveEventKind,
         stepIndex: Int?,
         taskOrdinal: Int?,
-        metadata: [String: String]
+        metadata: [String: String],
+        treatAsNonDroppable: Bool = false
     ) -> HiveEventEnqueueResult {
         condition.lock()
         defer { condition.unlock() }
@@ -73,7 +76,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
             return .terminated
         }
 
-        if isDroppable(kind) {
+        if treatAsNonDroppable == false, isDroppable(kind) {
             if queue.count >= capacity {
                 if case let .modelToken(text) = kind,
                    stepIndex != nil,
