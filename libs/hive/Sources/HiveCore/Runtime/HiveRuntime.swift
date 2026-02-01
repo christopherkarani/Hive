@@ -165,6 +165,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         emitter.emit(kind: .runStarted(threadID: threadID), stepIndex: nil, taskOrdinal: nil)
 
         var state = ensureThreadState(for: threadID)
+        var stepsExecutedThisAttempt = 0
 
         do {
             try validateRunOptions(options)
@@ -211,6 +212,15 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     return .finished(output: output, checkpointID: state.latestCheckpointID)
                 }
 
+                // Enforce maxSteps before emitting stepStarted for the next step.
+                // Out-of-steps completes with runFinished; the reason is visible only via the outcome.
+                if stepsExecutedThisAttempt == options.maxSteps {
+                    let output = try buildOutput(options: options, state: state)
+                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
+                    streamController.finish()
+                    return .outOfSteps(maxSteps: options.maxSteps, output: output, checkpointID: state.latestCheckpointID)
+                }
+
                 let (nextState, writtenChannels, dropped) = try await executeStep(
                     state: state,
                     threadID: threadID,
@@ -221,6 +231,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
                 state = nextState
                 threadStates[threadID] = state
+                stepsExecutedThisAttempt += 1
 
                 if !writtenChannels.isEmpty {
                     for channelID in writtenChannels {
@@ -261,8 +272,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     streamController.finish()
                     return .finished(output: output, checkpointID: state.latestCheckpointID)
                 }
+
+                // Give the cancellation flag a fair observation point between committed steps.
+                await Task.yield()
             }
-        } catch is CancellationError {
+        } catch is RuntimeCancellation {
             let output = try buildOutput(options: options, state: state)
             emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
             streamController.finish()
@@ -272,6 +286,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             throw error
         }
     }
+
+    /// Internal sentinel used to represent runtime-observed cancellation without treating arbitrary user-thrown
+    /// `CancellationError` values as cancellation.
+    private struct RuntimeCancellation: Error, Sendable {}
 
     private func validateRunOptions(_ options: HiveRunOptions) throws {
         guard options.maxSteps >= 0 else {
@@ -435,7 +453,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     taskOrdinal: task.ordinal
                 )
             }
-            throw CancellationError()
+            throw RuntimeCancellation()
         }
 
         let droppedCounter = HiveDroppedEventCounter()
@@ -456,7 +474,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             droppedCounter: droppedCounter
         )
 
-        if Task.isCancelled || results.contains(where: { $0.error is CancellationError }) {
+        if Task.isCancelled || results.contains(where: { $0.error is RuntimeCancellation }) {
             if options.deterministicTokenStreaming == false {
                 // Live stream events already emitted (if any). Ensure determinism for task failure surface.
             }
@@ -472,7 +490,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     taskOrdinal: task.ordinal
                 )
             }
-            throw CancellationError()
+            throw RuntimeCancellation()
         }
 
         var dropped = droppedCounter.snapshot()
@@ -489,7 +507,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                         kind: event.kind,
                         stepIndex: stepIndex,
                         taskOrdinal: event.taskOrdinal,
-                        metadata: event.metadata
+                        metadata: event.metadata,
+                        treatAsNonDroppable: true
                     )
                     dropped.record(enqueueResult)
                 }
@@ -607,6 +626,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
         await withTaskGroup(of: (Int, TaskExecutionResult<Schema>).self) { group in
             var nextIndex = 0
+            var cancellationObserved = false
             func addTask(_ index: Int) {
                 let task = tasks[index]
                 group.addTask {
@@ -636,7 +656,17 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             while let (index, result) = await group.next() {
                 results[index] = result
-                if nextIndex < tasks.count {
+
+                if cancellationObserved == false {
+                    // If any task reports cancellation (including CancellationError during retry-backoff sleep),
+                    // treat the step as cancelled and cancel remaining in-flight tasks.
+                    if Task.isCancelled || (result.error is RuntimeCancellation) {
+                        cancellationObserved = true
+                        group.cancelAll()
+                    }
+                }
+
+                if cancellationObserved == false, nextIndex < tasks.count {
                     addTask(nextIndex)
                     nextIndex += 1
                 }
@@ -706,9 +736,20 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 if attempt == maxAttempts {
                     return result
                 }
-                let delay = min(maxNanoseconds, UInt64(Double(initialNanoseconds) * pow(factor, Double(attempt - 1))))
+                if Task.isCancelled {
+                    return TaskExecutionResult(error: RuntimeCancellation())
+                }
+
+                let delay = Self.retryDelayNanoseconds(
+                    initialNanoseconds: initialNanoseconds,
+                    factor: factor,
+                    attempt: attempt,
+                    maxNanoseconds: maxNanoseconds
+                )
                 do {
                     try await environment.clock.sleep(nanoseconds: delay)
+                } catch is CancellationError {
+                    return TaskExecutionResult(error: RuntimeCancellation())
                 } catch {
                     return TaskExecutionResult(error: error)
                 }
@@ -716,6 +757,22 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             }
             return TaskExecutionResult(error: HiveRuntimeError.invalidRunOptions("retry attempts exhausted"))
         }
+    }
+
+    private static func retryDelayNanoseconds(
+        initialNanoseconds: UInt64,
+        factor: Double,
+        attempt: Int,
+        maxNanoseconds: UInt64
+    ) -> UInt64 {
+        // Spec: attempts are 1-based, and the delay for a failure before attempt+1 is:
+        // min(maxNanoseconds, floor(initialNanoseconds * pow(factor, attempt-1))).
+        let exponent = Double(max(0, attempt - 1))
+        let raw = Double(initialNanoseconds) * pow(factor, exponent)
+        let floored = raw.rounded(.down)
+        let capped = min(Double(maxNanoseconds), floored)
+        if capped <= 0 { return 0 }
+        return UInt64(capped)
     }
 
     private static func runNodeAttempt(
@@ -1021,19 +1078,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         if writes.isEmpty {
             return global
         }
-
-        var writesByChannel: [HiveChannelID: [WriteRecord<Schema>]] = [:]
+        // Router "fresh read" requires applying this task's global writes in ascending emission order.
+        // Channels are independent, but error precedence (e.g., reducer throws) must follow emission order.
         for write in writes {
-            writesByChannel[write.channelID, default: []].append(write)
-        }
-
-        for spec in registry.sortedChannelSpecs where spec.scope == .global {
-            guard let channelWrites = writesByChannel[spec.id], !channelWrites.isEmpty else { continue }
-            var current = try global.valueAny(for: spec.id)
-            for write in channelWrites {
-                current = try spec._reduceBox(current, write.value)
-            }
-            try global.setAny(current, for: spec.id)
+            let current = try global.valueAny(for: write.channelID)
+            let reduced = try write.spec._reduceBox(current, write.value)
+            try global.setAny(reduced, for: write.channelID)
         }
 
         return global
@@ -1414,7 +1464,8 @@ private final class HiveEventEmitter: @unchecked Sendable {
         kind: HiveEventKind,
         stepIndex: Int?,
         taskOrdinal: Int?,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        treatAsNonDroppable: Bool = false
     ) -> HiveEventEnqueueResult {
         lock.lock()
         let nextIndex = eventIndex
@@ -1425,7 +1476,8 @@ private final class HiveEventEmitter: @unchecked Sendable {
             kind: kind,
             stepIndex: stepIndex,
             taskOrdinal: taskOrdinal,
-            metadata: metadata
+            metadata: metadata,
+            treatAsNonDroppable: treatAsNonDroppable
         )
         if case .enqueued = result {
             eventIndex += 1

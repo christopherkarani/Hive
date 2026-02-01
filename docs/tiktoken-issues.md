@@ -1,7 +1,7 @@
-# TiktokenSwift checkout failure (git-lfs)
+# TiktokenSwift build/link failure (git-lfs)
 
 ## Summary
-Running `swift test` in `libs/hive` fails while checking out the `TiktokenSwift` dependency due to a missing Git LFS object. This blocks test execution and dependency resolution for the workspace.
+Running `swift test` in `libs/hive` can fail at link time because `TiktokenSwift` stores its `TiktokenFFI.xcframework` binary as Git LFS pointers, and SwiftPM does not automatically run `git lfs pull` in the checkout.
 
 ## Repro
 ```sh
@@ -11,23 +11,35 @@ swift test
 
 ## Error (excerpt)
 ```
-error: 'tiktokenswift': Couldn’t check out revision ‘661c349ebdc5e90c29f855e8c19f8984d401863b’:
-    Downloading Sources/TiktokenFFI/TiktokenFFI.xcframework/ios-arm64/TiktokenFFI.framework/TiktokenFFI (34 MB)
-    Error downloading object: Sources/TiktokenFFI/TiktokenFFI.xcframework/ios-arm64/TiktokenFFI.framework/TiktokenFFI (f458581): Smudge error: Error downloading ... remote missing object ...
-    error: external filter 'git-lfs filter-process' failed
-    fatal: ... smudge filter lfs failed
+ld: unknown file type in '.../.build/.../TiktokenFFI.framework/TiktokenFFI'
+.../TiktokenFFI.framework/TiktokenFFI: ASCII text
+version https://git-lfs.github.com/spec/v1
 ```
 
 ## Impact
-- `swift test` fails before build planning completes.
-- Any workflow that resolves `TiktokenSwift` via SwiftPM cannot proceed.
+- `swift test` builds but fails when linking `TiktokenFFI` (because it's an LFS pointer, not a Mach-O binary).
 
 ## Notes
-- The failure indicates the referenced LFS object is missing from the remote.
+- The LFS objects may exist upstream, but SwiftPM's checkout uses git without automatically fetching LFS objects.
 - SwiftPM surfaced additional warnings about duplicate package identity for `wax` and `conduit` via mixed local/remote dependencies, but those are warnings (not the root cause).
 
-## Potential fixes
-1. Verify the `TiktokenSwift` repository LFS objects are available (re-push LFS objects for the pinned revision).
-2. Pin to a revision or tag where LFS objects are known to exist.
-3. If local dev only, mirror the repo with LFS objects and update the dependency URL to the local path.
-4. Confirm Git LFS is installed and configured in the environment (if not already).
+## Fix (local dev)
+After `swift test` (or `swift build`) has created the checkout:
+
+```sh
+cd libs/hive/.build/checkouts/TiktokenSwift
+git remote set-url origin https://github.com/christopherkarani/TiktokenSwift.git
+git lfs pull
+```
+
+Then re-run:
+
+```sh
+cd libs/hive
+swift package clean
+swift test
+```
+
+## Potential long-term fixes
+1. Convert `TiktokenFFI.xcframework` to a SwiftPM `binaryTarget` (url + checksum) so SwiftPM fetches a real binary artifact.
+2. Vendor a small script/CI step that runs `git lfs pull` for checkouts that contain LFS pointers (e.g. `TiktokenSwift`).
