@@ -34,6 +34,12 @@ public struct HiveTaskLocalStore<Schema: HiveSchema>: Sendable {
         valuesByID[key.id] = value
     }
 
+    mutating func setAny(_ value: any Sendable, for id: HiveChannelID) throws {
+        let spec = try access.requireScope(.taskLocal, for: id)
+        try access.validateValueType(value, spec: spec)
+        valuesByID[id] = value
+    }
+
     func valueAny(for id: HiveChannelID) -> (any Sendable)? {
         valuesByID[id]
     }
