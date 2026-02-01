@@ -35,7 +35,7 @@ enum HiveTaskLocalFingerprint {
                 throw HiveRuntimeError.missingCodec(channelID: spec.id)
             }
 
-            let effectiveValue = overlay.valueAny(for: spec.id) ?? try initialCache.valueAny(for: spec.id)
+            let effectiveValue = try (overlay.valueAny(for: spec.id) ?? initialCache.valueAny(for: spec.id))
 
             do {
                 let valueData = try encode(effectiveValue)
