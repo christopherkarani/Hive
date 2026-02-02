@@ -89,7 +89,7 @@ If a test exists in the spec matrix but is not mapped here, treat that as a plan
 
 - (Contracts/types; matrix item enforcing “final chunk” is in `11-*`.)
 
-### `11-hiveswiftagents-prebuilt`
+### `11-hiveswiftagents-prebuilt` (SwiftAgents repo)
 
 - `testAgentsMessagesReducer_RemoveAll_UsesLastMarker()`
 - `testAgentsCompaction_TrimsToBudget_WithoutMutatingMessages()`

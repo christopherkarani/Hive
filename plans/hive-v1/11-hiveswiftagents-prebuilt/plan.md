@@ -1,8 +1,8 @@
-# Plan 11 — HiveSwiftAgents prebuilt graph + facade
+# Plan 11 — SwiftAgents-on-Hive prebuilt graph + facade
 
 ## Goal
 
-Implement the `HiveSwiftAgents` target’s “batteries included” prebuilt agent graph:
+Implement the SwiftAgents-on-Hive “batteries included” prebuilt agent graph (in the SwiftAgents repo):
 
 - Public facade types and schema
 - Messages reducer and update semantics (append/replace-by-id/remove/remove-all)
@@ -23,7 +23,7 @@ Implement the `HiveSwiftAgents` target’s “batteries included” prebuilt age
 
 ## Deliverables
 
-- `libs/hive/Sources/HiveSwiftAgents/` implementing:
+- SwiftAgents repo: `Sources/HiveSwiftAgents/` (module name preserved) implementing:
   - the public facade API (all types in §16.1), including:
     - `HiveAgentsToolApprovalPolicy`
     - `HiveAgents` (+ nested `ToolApprovalDecision`, `Interrupt`, `Resume`, `removeAllMessagesID`, `makeToolUsingChatAgent(...)`)
@@ -34,7 +34,7 @@ Implement the `HiveSwiftAgents` target’s “batteries included” prebuilt age
   - schema definition in §16.2
   - messages reducer in §16.3
   - node set + wiring + facade behavior in §16.4–§16.6
-- `HiveSwiftAgents` adapter surface for SwiftAgents integration (per `HIVE_V1_PLAN.md` target intent), e.g. a `SwiftAgentsToolRegistry` bridging SwiftAgents tools into `HiveToolRegistry`.
+- SwiftAgents adapter surface for Hive integration (per `HIVE_V1_PLAN.md` intent), e.g. a `SwiftAgentsToolRegistry` bridging SwiftAgents tools into `HiveToolRegistry`.
 - `HiveCore` hooks required by these nodes:
   - model/tool event emission (Plan 06)
   - interrupt/resume APIs (Plan 08/09)
@@ -65,3 +65,4 @@ Implement the `HiveSwiftAgents` target’s “batteries included” prebuilt age
 ## Acceptance criteria
 
 - Prebuilt graph runs end-to-end for tool approval workflows and compaction, with deterministic traces.
+- No Hive package targets are added or modified for SwiftAgents-on-Hive (implementation lives in SwiftAgents).

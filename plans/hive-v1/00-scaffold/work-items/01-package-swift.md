@@ -6,8 +6,8 @@ Define a Swift 6.2-compatible Package.swift that declares Hive libraries, includ
 
 Task BreakDown:
 1. Set tools version for Swift 6.2.
-2. Define products: Hive (umbrella), HiveCore, HiveCheckpointWax, HiveConduit, HiveSwiftAgents.
+2. Define products: Hive (umbrella), HiveCore, HiveCheckpointWax, HiveConduit.
 3. Define targets and test targets for each module.
-4. Add dependency placeholders or local path dependencies for Wax, Conduit, SwiftAgents.
-5. Ensure HiveCore has no direct imports on Wax/Conduit/SwiftAgents (enforced via target deps).
+4. Add dependency placeholders or local path dependencies for Wax, Conduit.
+5. Ensure HiveCore has no direct imports on Wax/Conduit (enforced via target deps).
 6. Set deployment targets to iOS 17.0 and macOS 14.0.

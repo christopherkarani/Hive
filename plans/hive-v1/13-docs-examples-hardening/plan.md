@@ -22,6 +22,7 @@ Close Hive v1 to the “definition of done” in `HIVE_SPEC.md` §18 by:
   - demonstrates interrupt/resume
 - A short “release checklist” capturing any remaining manual validation steps (e.g. Xcode build)
 - Confirm `swift test` passes for all Hive targets (explicit §18 requirement).
+- Confirm SwiftAgents tests pass in the SwiftAgents repo for the Hive integration.
 
 ## Work breakdown
 
@@ -33,5 +34,5 @@ Close Hive v1 to the “definition of done” in `HIVE_SPEC.md` §18 by:
 
 ## Acceptance criteria
 
-- Documentation covers how to use HiveCore and HiveSwiftAgents in a real app.
+- Documentation covers how to use HiveCore and SwiftAgents-on-Hive in a real app.
 - Examples compile and run.
