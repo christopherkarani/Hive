@@ -22,7 +22,7 @@ These documents decompose `HIVE_SPEC.md` (normative) into discrete, end-to-end t
 8. `08-interrupt-resume-external-writes` — interrupt selection + resume visibility + external writes
 9. `09-checkpointing-wax` — snapshot contents + store contract + version mismatch + encode/decode failure timing + Wax store
 10. `10-hybrid-inference-core` — canonical chat/tool types, model client contract, tool registry, routing hints
-11. `11-hiveswiftagents-prebuilt` — prebuilt agents schema + reducer + nodes + wiring + facade behavior
+11. `11-hiveswiftagents-prebuilt` — SwiftAgents-on-Hive prebuilt graph + facade behavior (implemented in the SwiftAgents repo)
 12. `12-conduit-adapter` — Conduit model client adapter + event mapping
 13. `13-docs-examples-hardening` — docs, examples, and “definition of done” closure
 
@@ -36,7 +36,7 @@ These documents decompose `HIVE_SPEC.md` (normative) into discrete, end-to-end t
 - `HIVE_SPEC.md` §13 → `06-*`
 - `HIVE_SPEC.md` §14 → `09-*` (+ `04-*` for version hashing)
 - `HIVE_SPEC.md` §15 → `10-*`
-- `HIVE_SPEC.md` §16 → `11-*`
+- `HIVE_SPEC.md` §16 → `11-*` (SwiftAgents repo)
 - `HIVE_SPEC.md` §17 → every plan (each plan must add/enable its required tests)
 - `HIVE_SPEC.md` §18 → `13-*`
 

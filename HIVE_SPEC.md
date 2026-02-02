@@ -37,7 +37,11 @@ Hive is a Swift 6.2, Swift Concurrency-first, deterministic graph runtime inspir
 ## 2) Locked v1 decisions
 
 - Swift 6.2, iOS 17 / macOS 14
-- Hard SwiftPM dependencies: SwiftAgents, Wax, Conduit
+- Dependency boundaries (SwiftPM):
+  - `HiveCore` has no external dependencies.
+  - `HiveConduit` depends on `Conduit`.
+  - `HiveCheckpointWax` depends on `Wax`.
+  - `SwiftAgents` depends on `HiveCore` (and may optionally depend on `HiveConduit` / `HiveCheckpointWax` for defaults).
 - Deterministic superstep execution (BSP)
 - Routers are synchronous only
 - Send tasks execute in the next superstep
@@ -76,7 +80,19 @@ Hive is a Swift 6.2, Swift Concurrency-first, deterministic graph runtime inspir
 
 ## 5) Dependencies and modules
 
-This is a greenfield project
+### Hive package
+
+- `HiveCore` (dependency-free):
+  - runtime, graph compilation, events, and canonical inference contracts.
+- `HiveConduit`:
+  - adapter that implements `HiveModelClient` using Conduit.
+- `HiveCheckpointWax`:
+  - adapter that implements `HiveCheckpointStore` using Wax.
+
+### SwiftAgents package
+
+- `SwiftAgents` integrates on top of `HiveCore` and provides the prebuilt `HiveAgents` graph and facade.
+- SwiftAgents may optionally depend on `HiveConduit` and `HiveCheckpointWax` to provide defaults, but Hive does not depend on SwiftAgents.
 
 
 ---
@@ -1806,7 +1822,7 @@ Failure timing:
 
 ## 15) Hybrid inference
 
-HiveCore defines canonical chat/tool types and minimal adapter contracts used by `HiveConduit` and `HiveSwiftAgents`.
+HiveCore defines canonical chat/tool types and minimal adapter contracts used by `HiveConduit` and SwiftAgents’ Hive integration.
 
 ### 15.1 Canonical chat + tool types (HiveCore)
 
@@ -1834,11 +1850,11 @@ public struct HiveToolResult: Codable, Sendable {
   public let content: String
 }
 
-/// Special operations for the `messages` reducer (HiveSwiftAgents).
+/// Special operations for the `messages` reducer (SwiftAgents prebuilt graph).
 public enum HiveChatMessageOp: String, Codable, Sendable {
   /// Delete the message with this `id`.
   case remove
-  /// Delete all messages; the reducer resets history at this marker (see HiveSwiftAgents spec).
+  /// Delete all messages; the reducer resets history at this marker (see SwiftAgents-on-Hive spec).
   case removeAll
 }
 
@@ -1941,9 +1957,9 @@ Rule (v1):
 
 ---
 
-## 16) HiveSwiftAgents (prebuilt)
+## 16) SwiftAgents on Hive (prebuilt)
 
-HiveSwiftAgents ships a prebuilt chat+tools agent graph (“HiveAgents”) and a small façade that wires `HiveRuntime` with safe defaults.
+SwiftAgents ships a prebuilt chat+tools agent graph (“HiveAgents”) and a small façade that wires `HiveRuntime` with safe defaults. The implementation lives in the SwiftAgents package (not in Hive).
 
 ### 16.1 Public types (normative, v1)
 
@@ -2044,7 +2060,7 @@ Environment requirements (v1):
 
 ### 16.2 Schema (normative, v1)
 
-HiveSwiftAgents defines a schema type that is used by the prebuilt graph:
+SwiftAgents defines a schema type that is used by the prebuilt graph:
 
 ```swift
 public extension HiveAgents {
@@ -2151,8 +2167,8 @@ Deterministic rules:
 
 Node semantics:
 - `preModel`:
-  - If a caller-provided `preModel` node was passed to `makeToolUsingChatAgent`, that node runs as `preModel` and HiveSwiftAgents imposes no additional behavior.
-  - Otherwise, HiveSwiftAgents MUST install a built-in compaction `preModel` node with this behavior:
+  - If a caller-provided `preModel` node was passed to `makeToolUsingChatAgent`, that node runs as `preModel` and SwiftAgents imposes no additional behavior.
+  - Otherwise, SwiftAgents MUST install a built-in compaction `preModel` node with this behavior:
     - Read `messages` and `llmInputMessages` from the store.
     - If `context.compactionPolicy == nil`: write `llmInputMessages = nil` and return (no compaction).
     - Else:

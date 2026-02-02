@@ -5,8 +5,8 @@ Hive is a Swift 6.2, Swift Concurrency–first, strongly typed **graph runtime**
 - **Type safety** (compile-time safe reads/writes)
 - **Deterministic execution** (reproducible results and traces)
 - **Streaming** (first-class event stream for UI)
-- **Checkpointing/memory** (via `Wax`)
-- **Pluggable inference + tools** (via `Conduit` + `SwiftAgents` adapters)
+- **Checkpointing/memory** (via `HiveCheckpointWax` / Wax)
+- **Pluggable inference + tools** (via `HiveConduit` + SwiftAgents-on-Hive)
 
 This document is intentionally verbose: it is a build-spec for coding agents that need clear semantics, interfaces, and testable milestones.
 
@@ -23,7 +23,11 @@ These are the decisions Hive v1 is built around. Coding agents must treat these 
 
 - Swift: **Swift 6.2**
 - Deployment targets: **iOS 17.0**, **macOS 14.0**
-- Hard dependencies (SwiftPM): **SwiftAgents**, **Wax**, **Conduit** (no optional deps in v1)
+- Dependency boundaries (SwiftPM):
+  - `HiveCore` has no external dependencies.
+  - `HiveConduit` depends on `Conduit`.
+  - `HiveCheckpointWax` depends on `Wax`.
+  - `SwiftAgents` depends on `HiveCore` (and may optionally depend on `HiveConduit` / `HiveCheckpointWax` for defaults).
 
 Rationale: this keeps the concurrency and Foundation surface modern and eliminates conditional availability workarounds that slow down the port.
 
@@ -55,7 +59,7 @@ Rationale: this keeps the concurrency and Foundation surface modern and eliminat
 
 ### SwiftAgents deliverables
 
-- `HiveSwiftAgents` ships `HiveAgents.makeToolUsingChatAgent(...)` and the façade runtime APIs (`sendUserMessage`, `resumeToolApproval`).
+- SwiftAgents (outside the Hive package) ships `HiveAgents.makeToolUsingChatAgent(...)` and the façade runtime APIs (`sendUserMessage`, `resumeToolApproval`) on top of `HiveCore`.
 - The prebuilt agent graph is the default “works out of the box” path and is documented and fully covered by tests.
 
 ---
@@ -188,7 +192,7 @@ Create `libs/hive` as a SwiftPM workspace root.
 ### 4.1 Targets
 
 - `HiveCore`
-  - no direct imports of Wax/Conduit/SwiftAgents (but package depends on them)
+  - no direct imports of Wax/Conduit/SwiftAgents
   - contains runtime and public API surface
 - `HiveCheckpointWax`
   - depends on `HiveCore` + `Wax`
@@ -196,9 +200,9 @@ Create `libs/hive` as a SwiftPM workspace root.
 - `HiveConduit`
   - depends on `HiveCore` + `Conduit`
   - provides `ConduitModelClient` + Conduit → Hive events mapping
-- `HiveSwiftAgents`
-  - depends on `HiveCore` + `SwiftAgents`
-  - provides tool registry and convenience nodes
+- `SwiftAgents` (external package)
+  - depends on `HiveCore` (optionally on `HiveConduit` / `HiveCheckpointWax` for defaults)
+  - provides the prebuilt `HiveAgents` graph + facade APIs on top of Hive
 
 ### 4.2 File structure
 
@@ -857,7 +861,7 @@ public enum HiveEventKind: Sendable {
   case checkpointSaved(checkpointID: HiveCheckpointID)
   case checkpointLoaded(checkpointID: HiveCheckpointID)
 
-  // Adapter-facing events (emitted by HiveConduit / HiveSwiftAgents nodes).
+  // Adapter-facing events (emitted by HiveConduit / SwiftAgents nodes).
   case modelInvocationStarted(model: String)
   case modelToken(text: String)
   case modelInvocationFinished
@@ -1081,9 +1085,12 @@ See `HIVE_SPEC.md` §10.0 for the exact `HiveRuntime` public API and external wr
 
 ### 11.1 Dependency policy (v1)
 
-SwiftAgents, Wax, and Conduit are **hard dependencies** of the SwiftPM package in v1.  
-HiveCore still avoids importing them directly, but the package **always builds** with these dependencies available.  
-All third-party integrations live in adapter modules.
+- `HiveCore` has no external dependencies.
+- The Hive package ships optional adapters:
+  - `HiveConduit` (depends on `Conduit`)
+  - `HiveCheckpointWax` (depends on `Wax`)
+- `SwiftAgents` depends on `HiveCore` and may optionally depend on the Hive adapters for defaults.
+- All third-party integrations live in adapter modules; HiveCore only defines canonical contracts.
 
 HiveCore defines minimal, stable protocols and value types used by adapters and convenience nodes:
 
@@ -1204,7 +1211,7 @@ Responsibilities:
 - emit model invocation start/finish events (including model name and usage metadata)
 - keep prompt templates and provider-specific request knobs inside `HiveConduit`
 
-### 11.3 SwiftAgents adapter (HiveSwiftAgents)
+### 11.3 SwiftAgents adapter (SwiftAgents on Hive)
 
 Responsibilities:
 
@@ -1214,11 +1221,11 @@ Responsibilities:
 
 #### Prebuilt SwiftAgents graph (v1 deliverable)
 
-HiveSwiftAgents ships a prebuilt graph that is the default entry point for apps:
+SwiftAgents ships a prebuilt graph that is the default entry point for apps:
 
 `HiveAgents.makeToolUsingChatAgent(...) -> CompiledHiveGraph<HiveAgents.Schema>`
 
-HiveSwiftAgents also ships a façade API that makes the prebuilt graph easy to use in apps (no manual wiring):
+SwiftAgents also ships a façade API that makes the prebuilt graph easy to use in apps (no manual wiring):
 
 ```swift
 public struct HiveAgentsRuntime: Sendable {
@@ -1261,7 +1268,7 @@ HiveAgents.Schema locks its interrupt/resume payloads to support tool approval:
 - `InterruptPayload = HiveAgents.Interrupt` (Codable enum)
 - `ResumePayload = HiveAgents.Resume` (Codable enum)
 
-HiveSwiftAgents defines:
+SwiftAgents defines:
 
 ```swift
 public enum HiveAgents {
@@ -1298,7 +1305,7 @@ HiveAgents.Schema sets `Context = HiveAgentsContext`.
 - `messages` uses a reducer that supports **append**, **replace-by-id**, **remove-by-id**, and **remove-all** (for trimming/compaction workflows).
 - `HiveChatMessage.id` is required for replacement/removal; the prebuilt HiveAgents graph assigns deterministic IDs (no UUID-based IDs; see `HIVE_SPEC.md` §16.2–§16.4).
 - `preModel` may emit `llmInputMessages` (global + untracked) to avoid mutating `messages` while still controlling model context.
-- A `HiveTokenizer` + `HiveCompactionPolicy` are provided in `HiveSwiftAgents` to support token-budgeted trimming (no summarization in v1).
+- A `HiveTokenizer` + `HiveCompactionPolicy` are provided by SwiftAgents to support token-budgeted trimming (no summarization in v1).
 
 ```swift
 public protocol HiveTokenizer: Sendable {
@@ -1519,13 +1526,13 @@ Either make `HiveEventKind` codable or map events to a stable, codable trace rec
   - [ ] `HiveRuntimeError.taskLocalFingerprintEncodeFailed(...)` (fail fast deterministically)
 - [ ] Tests: save/load + resume determinism + encode-failure determinism
 
-### Phase 7 — Adapters (Conduit + SwiftAgents)
+### Phase 7 — Adapters (Conduit + SwiftAgents on Hive)
 
 - [ ] Implement `HiveModelClient` + `AnyHiveModelClient` in `HiveCore`
 - [ ] Implement `HiveToolRegistry` + `AnyHiveToolRegistry` in `HiveCore`
 - [ ] Implement `ConduitModelClient` in `HiveConduit`
-- [ ] Implement `SwiftAgentsToolRegistry` adapter in `HiveSwiftAgents`
-- [ ] Build prebuilt SwiftAgents graph (`HiveAgents.makeToolUsingChatAgent`)
+- [ ] Implement `SwiftAgentsToolRegistry` adapter in SwiftAgents (Hive integration)
+- [ ] Build prebuilt SwiftAgents graph (`HiveAgents.makeToolUsingChatAgent`) in the SwiftAgents repo
 - [ ] Add pre/post model hooks + compaction policy support
 - [ ] Build façade runtime API (`HiveAgentsRuntime.sendUserMessage`, `resumeToolApproval`)
 - [ ] Add tool approval interrupt/resume coverage tests
@@ -1557,7 +1564,7 @@ Hive v1 is “done” when:
 - `HiveCheckpointWax`:
   - saves/loads checkpoints
   - resume produces identical results to uninterrupted run
-- `HiveConduit` + `HiveSwiftAgents`:
+- `HiveConduit` + SwiftAgents (Hive integration):
   - at least one working, documented “agent loop” example
 - Tests cover the core semantics and determinism
 
@@ -1603,5 +1610,5 @@ Use this checklist as the final review gate. If any item fails, v1 is not shippa
 
 ### Build + tests
 
-- [ ] `swift test` passes for `HiveCore`, `HiveCheckpointWax`, `HiveConduit`, `HiveSwiftAgents`.
+- [ ] `swift test` passes for `HiveCore`, `HiveCheckpointWax`, `HiveConduit`; SwiftAgents tests pass in the SwiftAgents repo.
 - [ ] Public API is reviewed for ergonomics (naming, defaults, minimal footguns).

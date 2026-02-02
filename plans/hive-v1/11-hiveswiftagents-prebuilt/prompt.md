@@ -1,10 +1,10 @@
-# Codex prompt — Plan 11 (HiveSwiftAgents)
+# Codex prompt — Plan 11 (SwiftAgents on Hive)
 
 You are implementing **Plan 11** from `plans/hive-v1/11-hiveswiftagents-prebuilt/plan.md`.
 
 ## Objective
 
-Implement the `HiveSwiftAgents` prebuilt agent graph and facade per `HIVE_SPEC.md` §16, including messages reducer semantics, compaction behavior, and tool approval interrupt/resume flow.
+Implement the SwiftAgents-on-Hive prebuilt agent graph and facade per `HIVE_SPEC.md` §16, including messages reducer semantics, compaction behavior, and tool approval interrupt/resume flow. This work lives in the SwiftAgents repo (not in Hive).
 
 ## Read first
 
@@ -19,4 +19,4 @@ Implement the `HiveSwiftAgents` prebuilt agent graph and facade per `HIVE_SPEC.m
 
 ## Commands
 
-- `cd libs/hive && swift test`
+- `cd <SwiftAgentsRepo> && swift test`

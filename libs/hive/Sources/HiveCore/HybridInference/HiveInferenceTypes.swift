@@ -10,6 +10,7 @@ public enum HiveChatRole: String, Codable, Sendable {
 public struct HiveToolDefinition: Codable, Sendable {
     public let name: String
     public let description: String
+    /// JSON Schema string (UTF-8) describing tool arguments.
     public let parametersJSONSchema: String
 
     public init(name: String, description: String, parametersJSONSchema: String) {
@@ -23,6 +24,7 @@ public struct HiveToolDefinition: Codable, Sendable {
 public struct HiveToolCall: Codable, Sendable {
     public let id: String
     public let name: String
+    /// JSON string (UTF-8) containing tool arguments.
     public let argumentsJSON: String
 
     public init(id: String, name: String, argumentsJSON: String) {
@@ -45,7 +47,9 @@ public struct HiveToolResult: Codable, Sendable {
 
 /// Special operations used by message reducers.
 public enum HiveChatMessageOp: String, Codable, Sendable {
+    /// Remove the message with the matching ID.
     case remove
+    /// Remove all messages (reset history at this marker).
     case removeAll
 }
 
@@ -102,13 +106,20 @@ public struct HiveChatResponse: Codable, Sendable {
 
 /// Streaming chunk emitted by a model client.
 public enum HiveChatStreamChunk: Sendable {
+    /// Incremental token content.
     case token(String)
+    /// Final response for the stream; must be emitted exactly once and last on success.
     case final(HiveChatResponse)
 }
 
 /// Model client interface used by adapters.
+///
+/// - Important: If `stream(_:)` completes successfully, it must emit exactly one `.final` chunk and it must be last.
+///              `complete(_:)` must return the same response that would be produced by the `.final` chunk.
 public protocol HiveModelClient: Sendable {
+    /// Returns the same response as the final stream chunk for the same request.
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse
+    /// Streams incremental tokens and ends with a single final response on success.
     func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error>
 }
 

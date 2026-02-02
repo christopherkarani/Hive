@@ -9,13 +9,13 @@ Implement the canonical inference surface in `HiveCore`:
 - tool registry contract
 - hybrid inference hints and routing metadata types
 
-This plan defines the “portable” types used by `HiveConduit` and `HiveSwiftAgents`.
+This plan defines the “portable” types used by `HiveConduit` and SwiftAgents’ Hive integration.
 
 ## Spec anchors
 
 - `HIVE_SPEC.md` §15.1–§15.4
 - Required tests in §17.2 that reference this area:
-  - `testAgentsModelStream_MissingFinalFails()` (behavior enforced in HiveSwiftAgents nodes, but depends on the model client contract)
+  - `testAgentsModelStream_MissingFinalFails()` (behavior enforced in SwiftAgents nodes, but depends on the model client contract)
 
 ## Deliverables
 

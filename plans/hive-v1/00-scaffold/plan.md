@@ -7,17 +7,17 @@ Create a SwiftPM workspace under `libs/hive` that can compile and run `swift tes
 - `HiveCore` (runtime + public API surface)
 - `HiveCheckpointWax` (Wax-backed checkpoint store)
 - `HiveConduit` (Conduit model client adapter)
-- `HiveSwiftAgents` (prebuilt graph + convenience nodes)
+- SwiftAgents-on-Hive lives in the SwiftAgents repo (not a Hive target)
 
 ## Spec anchors
 
-- `HIVE_SPEC.md` §2 (locked decisions), especially Swift 6.2 + hard deps (SwiftAgents, Wax, Conduit).
+- `HIVE_SPEC.md` §2 (locked decisions), especially Swift 6.2 + dependency boundaries.
 - `HIVE_V1_PLAN.md` §4 (Targets + suggested file structure).
   - Constraint: `HiveCore` must not import Wax/Conduit/SwiftAgents directly.
 
 ## Deliverables
 
-- `libs/hive/Package.swift` with the four library targets and matching test targets.
+- `libs/hive/Package.swift` with Hive targets and matching test targets.
 - `libs/hive/Makefile` implementing `make format`, `make lint`, `make test` so the repo root `Makefile` can invoke it.
 - Minimal placeholder modules so `swift test` is green even before feature work:
   - `HiveCore` exports at least a single public symbol (e.g. `public enum HiveCoreVersion { ... }`) to validate module wiring.
@@ -30,7 +30,7 @@ Create a SwiftPM workspace under `libs/hive` that can compile and run `swift tes
 2. Author `Package.swift`:
    - Set tools version compatible with Swift 6.2.
    - Define products + targets.
-   - Add dependencies placeholders for `Wax`, `Conduit`, `SwiftAgents` (exact versions can be decided during implementation; keep the structure correct).
+   - Add dependencies placeholders for `Wax`, `Conduit` (exact versions can be decided during implementation; keep the structure correct).
 3. Add `Makefile`:
    - `make test`: `swift test`
    - `make lint` / `make format`: either invoke installed tooling (if present) or print actionable instructions and exit 0 (don’t block contributors by default).

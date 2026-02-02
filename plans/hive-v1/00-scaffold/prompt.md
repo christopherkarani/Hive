@@ -4,7 +4,7 @@ You are implementing **Plan 00** from `plans/hive-v1/00-scaffold/plan.md`.
 
 ## Objective
 
-Create a SwiftPM workspace under `libs/hive` with buildable targets (`HiveCore`, `HiveCheckpointWax`, `HiveConduit`, `HiveSwiftAgents`) and Swift Testing smoke tests so `swift test` passes.
+Create a SwiftPM workspace under `libs/hive` with buildable targets (`HiveCore`, `HiveCheckpointWax`, `HiveConduit`) and Swift Testing smoke tests so `swift test` passes.
 
 ## Non-negotiables
 
@@ -20,7 +20,6 @@ Create a SwiftPM workspace under `libs/hive` with buildable targets (`HiveCore`,
   - `libs/hive/Sources/HiveCore/`
   - `libs/hive/Sources/HiveCheckpointWax/`
   - `libs/hive/Sources/HiveConduit/`
-  - `libs/hive/Sources/HiveSwiftAgents/`
 - Swift Testing smoke tests under `libs/hive/Tests/*Tests/`
 
 ## Commands
@@ -32,4 +31,3 @@ Create a SwiftPM workspace under `libs/hive` with buildable targets (`HiveCore`,
 
 - All targets compile and tests pass.
 - No extra architecture work beyond scaffolding.
-
