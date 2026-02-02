@@ -190,8 +190,6 @@ public struct SwiftAgentsToolRegistry: HiveToolRegistry, Sendable {
         switch object {
         case is NSNull:
             return .null
-        case let bool as Bool:
-            return .bool(bool)
         case let int as Int:
             return .int(int)
         case let double as Double:
@@ -212,6 +210,8 @@ public struct SwiftAgentsToolRegistry: HiveToolRegistry, Sendable {
                 return .int(Int(value))
             }
             return .double(value)
+        case let bool as Bool:
+            return .bool(bool)
         case let string as String:
             return .string(string)
         case let array as [Any]:
