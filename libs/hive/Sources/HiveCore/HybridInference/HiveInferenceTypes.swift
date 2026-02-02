@@ -108,7 +108,7 @@ public struct HiveChatResponse: Codable, Sendable {
 public enum HiveChatStreamChunk: Sendable {
     /// Incremental token content.
     case token(String)
-    /// Final response for the stream; must be emitted exactly once and last on success.
+    /// Final response for the stream; MUST be emitted exactly once and MUST be the final chunk if the stream completes successfully.
     case final(HiveChatResponse)
 }
 
@@ -121,6 +121,34 @@ public protocol HiveModelClient: Sendable {
     func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse
     /// Streams incremental tokens and ends with a single final response on success.
     func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error>
+}
+
+public extension HiveModelClient {
+    /// Consumes the stream and returns the final response, enforcing the final-chunk contract.
+    func streamFinal(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        var finalResponse: HiveChatResponse?
+        var sawFinal = false
+
+        for try await chunk in stream(request) {
+            switch chunk {
+            case .token:
+                if sawFinal {
+                    throw HiveRuntimeError.modelStreamInvalid("Received token after final chunk.")
+                }
+            case .final(let response):
+                if sawFinal {
+                    throw HiveRuntimeError.modelStreamInvalid("Received multiple final chunks.")
+                }
+                sawFinal = true
+                finalResponse = response
+            }
+        }
+
+        guard let finalResponse else {
+            throw HiveRuntimeError.modelStreamInvalid("Missing final chunk.")
+        }
+        return finalResponse
+    }
 }
 
 /// Type-erased model client wrapper.
