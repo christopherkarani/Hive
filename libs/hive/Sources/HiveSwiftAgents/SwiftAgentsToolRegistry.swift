@@ -150,7 +150,9 @@ public struct SwiftAgentsToolRegistry: HiveToolRegistry, Sendable {
     private static func decodeArgumentsJSON(_ json: String) throws -> [String: SendableValue] {
         let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return [:]
+            throw SwiftAgentsToolRegistryError.invalidArgumentsJSON(
+                "Empty arguments JSON. Use {} when no arguments are required."
+            )
         }
 
         guard let data = trimmed.data(using: .utf8) else {
