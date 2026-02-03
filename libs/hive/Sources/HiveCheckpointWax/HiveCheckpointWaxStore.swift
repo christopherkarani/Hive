@@ -12,9 +12,7 @@ private enum HiveCheckpointWaxMetadataKey {
 /// Wax-backed checkpoint store implementation.
 public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointStore {
 
-    private static func lexicographicallyPrecedes(_ lhs: String, _ rhs: String) -> Bool {
-        lhs.utf8.lexicographicallyPrecedes(rhs.utf8)
-    }
+    private static var checkpointKind: String { "hive.checkpoint" }
 
     private let wax: Wax
     private let encoder: JSONEncoder
@@ -62,23 +60,22 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointStore {
     public func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
         let metas = await wax.frameMetas()
 
-        var best: (frameId: UInt64, stepIndex: Int, checkpointID: String)?
+        var best: (frameId: UInt64, stepIndex: Int)?
         for meta in metas {
+            guard meta.kind == Self.checkpointKind else { continue }
             guard let metadata = meta.metadata?.entries else { continue }
             guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
             guard let stepString = metadata[HiveCheckpointWaxMetadataKey.stepIndex],
                   let stepIndex = Int(stepString) else { continue }
-            guard let checkpointID = metadata[HiveCheckpointWaxMetadataKey.checkpointID] else { continue }
 
             if let current = best {
                 if stepIndex > current.stepIndex {
-                    best = (meta.id, stepIndex, checkpointID)
-                } else if stepIndex == current.stepIndex,
-                          Self.lexicographicallyPrecedes(current.checkpointID, checkpointID) {
-                    best = (meta.id, stepIndex, checkpointID)
+                    best = (meta.id, stepIndex)
+                } else if stepIndex == current.stepIndex, meta.id > current.frameId {
+                    best = (meta.id, stepIndex)
                 }
             } else {
-                best = (meta.id, stepIndex, checkpointID)
+                best = (meta.id, stepIndex)
             }
         }
 
