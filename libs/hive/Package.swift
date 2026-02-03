@@ -21,21 +21,24 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "HiveCore"
+            name: "HiveCore",
+            exclude: ["README.md"]
         ),
         .target(
             name: "HiveConduit",
             dependencies: [
                 "HiveCore",
                 .product(name: "Conduit", package: "Conduit"),
-            ]
+            ],
+            exclude: ["README.md"]
         ),
         .target(
             name: "HiveCheckpointWax",
             dependencies: [
                 "HiveCore",
                 .product(name: "Wax", package: "Wax"),
-            ]
+            ],
+            exclude: ["README.md"]
         ),
         .target(
             name: "Hive",
@@ -43,7 +46,8 @@ let package = Package(
                 "HiveCore",
                 "HiveConduit",
                 "HiveCheckpointWax",
-            ]
+            ],
+            exclude: ["README.md"]
         ),
         .executableTarget(
             name: "HiveTinyGraphExample",
