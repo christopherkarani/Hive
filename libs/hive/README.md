@@ -5,7 +5,6 @@ Hive is a Swift graph runtime with optional adapters for agent orchestration, in
 ## Modules
 - `Hive` — umbrella module for the full stack (one import).
 - `HiveCore` — schema and core runtime primitives.
-- `HiveSwiftAgents` — SwiftAgents integration.
 - `HiveConduit` — Conduit model client adapter.
 - `HiveCheckpointWax` — Wax-backed checkpoint store.
 

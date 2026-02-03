@@ -11,5 +11,4 @@ func hiveUmbrellaReexportsSubmodules() {
     _ = HiveCoreVersion.self
     _ = HiveConduitVersion.self
     _ = HiveCheckpointWaxVersion.self
-    _ = HiveSwiftAgentsVersion.self
 }
