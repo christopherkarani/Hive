@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "HiveCore", targets: ["HiveCore"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
+        .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
         .package(path: "../../../Conduit"),
@@ -43,6 +44,11 @@ let package = Package(
                 "HiveConduit",
                 "HiveCheckpointWax",
             ]
+        ),
+        .executableTarget(
+            name: "HiveTinyGraphExample",
+            dependencies: ["HiveCore"],
+            path: "Examples/TinyGraph"
         ),
         .testTarget(
             name: "HiveCoreTests",
