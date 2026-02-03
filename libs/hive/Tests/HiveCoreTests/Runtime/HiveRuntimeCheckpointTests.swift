@@ -223,6 +223,104 @@ func testCheckpointID_DerivedFromRunIDAndStepIndex() async throws {
     #expect(checkpoint.id.rawValue == expected)
 }
 
+@Test("Checkpoint resume parity matches uninterrupted run output")
+func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
+    enum Schema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let key = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+            let spec = HiveChannelSpec(
+                key: key,
+                scope: .global,
+                reducer: HiveReducer { current, update in current + update },
+                updatePolicy: .multi,
+                initial: { 0 },
+                codec: HiveAnyCodec(IntCodec(id: "int")),
+                persistence: .checkpointed
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in
+        HiveNodeOutput(writes: [AnyHiveWrite(valueKey, 1)], next: .useGraphEdges)
+    }
+    builder.addNode(HiveNodeID("B")) { _ in
+        HiveNodeOutput(writes: [AnyHiveWrite(valueKey, 2)], next: .end)
+    }
+    builder.addNode(HiveNodeID("C")) { _ in
+        HiveNodeOutput(writes: [AnyHiveWrite(valueKey, 3)], next: .end)
+    }
+    builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
+    builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("C"))
+
+    let graph = try builder.compile()
+
+    let baselineRuntime = HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: ())
+    )
+    let baseline = await baselineRuntime.run(
+        threadID: HiveThreadID("checkpoint-parity-baseline"),
+        input: (),
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    let baselineOutcome = try await baseline.outcome.value
+    guard case let .finished(output, _) = baselineOutcome else {
+        #expect(Bool(false))
+        return
+    }
+    guard case let .fullStore(baselineStore) = output else {
+        #expect(Bool(false))
+        return
+    }
+    let baselineValue = try baselineStore.get(valueKey)
+    #expect(baselineValue == 6)
+
+    let checkpointStore = TestCheckpointStore<Schema>()
+    let checkpointedRuntime = HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(checkpointStore))
+    )
+
+    let first = await checkpointedRuntime.run(
+        threadID: HiveThreadID("checkpoint-parity"),
+        input: (),
+        options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .everyStep)
+    )
+    let firstOutcome = try await first.outcome.value
+    guard case .outOfSteps = firstOutcome else {
+        #expect(Bool(false))
+        return
+    }
+
+    let checkpoints = await checkpointStore.all()
+    #expect(!checkpoints.isEmpty)
+
+    let resumedRuntime = HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(checkpointStore))
+    )
+    let resumed = await resumedRuntime.run(
+        threadID: HiveThreadID("checkpoint-parity"),
+        input: (),
+        options: HiveRunOptions(checkpointPolicy: .everyStep)
+    )
+    let resumedOutcome = try await resumed.outcome.value
+    guard case let .finished(resumedOutput, _) = resumedOutcome else {
+        #expect(Bool(false))
+        return
+    }
+    guard case let .fullStore(resumedStore) = resumedOutput else {
+        #expect(Bool(false))
+        return
+    }
+    let resumedValue = try resumedStore.get(valueKey)
+    #expect(resumedValue == baselineValue)
+}
+
 @Test("Checkpoint decode failure fails before step 0")
 func testCheckpointDecodeFailure_FailsBeforeStep0() async {
     enum Schema: HiveSchema {
