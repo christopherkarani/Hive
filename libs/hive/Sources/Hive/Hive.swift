@@ -1,7 +1,6 @@
 @_exported import HiveCore
 @_exported import HiveConduit
 @_exported import HiveCheckpointWax
-@_exported import HiveSwiftAgents
 
 /// Namespace for the Hive umbrella module version.
 public enum HiveVersion {

@@ -13,12 +13,10 @@ let package = Package(
         .library(name: "HiveCore", targets: ["HiveCore"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
-        .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
     ],
     dependencies: [
         .package(path: "../../../Conduit"),
         .package(path: "../../../rag/Wax"),
-        .package(path: "../../../SwiftAgents"),
     ],
     targets: [
         .target(
@@ -39,19 +37,11 @@ let package = Package(
             ]
         ),
         .target(
-            name: "HiveSwiftAgents",
-            dependencies: [
-                "HiveCore",
-                .product(name: "SwiftAgents", package: "SwiftAgents"),
-            ]
-        ),
-        .target(
             name: "Hive",
             dependencies: [
                 "HiveCore",
                 "HiveConduit",
                 "HiveCheckpointWax",
-                "HiveSwiftAgents",
             ]
         ),
         .testTarget(
@@ -65,10 +55,6 @@ let package = Package(
         .testTarget(
             name: "HiveCheckpointWaxTests",
             dependencies: ["HiveCheckpointWax"]
-        ),
-        .testTarget(
-            name: "HiveSwiftAgentsTests",
-            dependencies: ["HiveSwiftAgents"]
         ),
         .testTarget(
             name: "HiveTests",
