@@ -6,7 +6,7 @@ Deterministic, Swift‑native graph runtime for agent workflows. Built for iOS/m
 - **Deterministic by design**: stable supersteps, ordered events, and golden‑testable traces.
 - **Swift‑first**: pure Swift 6.2, Swift Concurrency, type‑safe channels.
 - **Agent‑ready**: tool calling, token streaming, and checkpoint/resume.
-- **Apple platforms**: iOS 17+ / macOS 14+ focus.
+- **Apple platforms**: iOS 26+ / macOS 26+ focus.
 
 ## What You Can Build
 - Agent graphs with fan‑out, joins, and tool approval gates.
