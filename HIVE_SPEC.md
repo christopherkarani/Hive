@@ -14,7 +14,7 @@ This document is the implementation-ready spec for Hive v1. It is derived from `
 
 ## 1) Scope and goals
 
-Hive is a Swift 6.2, Swift Concurrency-first, deterministic graph runtime inspired by LangGraph's channel/reducer/superstep model. v1 targets iOS 17 and macOS 14, runs in-process, and is optimized for hybrid on-device + cloud inference with a focus on on-device(iOS/MacOS)
+Hive is a Swift 6.2, Swift Concurrency-first, deterministic graph runtime inspired by LangGraph's channel/reducer/superstep model. v1 targets iOS 26 and macOS 26, runs in-process, and is optimized for hybrid on-device + cloud inference with a focus on on-device(iOS/MacOS)
 
 ### Goals
 
@@ -36,7 +36,7 @@ Hive is a Swift 6.2, Swift Concurrency-first, deterministic graph runtime inspir
 
 ## 2) Locked v1 decisions
 
-- Swift 6.2, iOS 17 / macOS 14
+- Swift 6.2, iOS 26 / macOS 26
 - Dependency boundaries (SwiftPM):
   - `HiveCore` has no external dependencies.
   - `HiveConduit` depends on `Conduit`.

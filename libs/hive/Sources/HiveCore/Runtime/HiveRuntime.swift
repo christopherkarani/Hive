@@ -129,6 +129,26 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         return HiveRunHandle(runID: runID, attemptID: attemptID, events: events, outcome: outcome)
     }
 
+    public func getCheckpointHistory(
+        threadID: HiveThreadID,
+        limit: Int? = nil
+    ) async throws -> [HiveCheckpointSummary] {
+        guard let store = environment.checkpointStore else {
+            throw HiveRuntimeError.checkpointStoreMissing
+        }
+        return try await store.listCheckpoints(threadID: threadID, limit: limit)
+    }
+
+    public func getCheckpoint(
+        threadID: HiveThreadID,
+        id: HiveCheckpointID
+    ) async throws -> HiveCheckpoint<Schema>? {
+        guard let store = environment.checkpointStore else {
+            throw HiveRuntimeError.checkpointStoreMissing
+        }
+        return try await store.loadCheckpoint(threadID: threadID, id: id)
+    }
+
     public func getLatestStore(threadID: HiveThreadID) -> HiveGlobalStore<Schema>? {
         threadStates[threadID]?.global
     }

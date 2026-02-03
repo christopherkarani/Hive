@@ -11,6 +11,11 @@ public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
     }
 }
 
+struct HiveStaticEdge: Hashable, Sendable {
+    let from: HiveNodeID
+    let to: HiveNodeID
+}
+
 /// Join edge with canonical ID and sorted parent list.
 public struct HiveJoinEdge: Hashable, Sendable {
     public let id: String
@@ -37,6 +42,7 @@ public struct CompiledHiveGraph<Schema: HiveSchema>: Sendable {
     public let start: [HiveNodeID]
     public let outputProjection: HiveOutputProjection
     public let nodesByID: [HiveNodeID: HiveCompiledNode<Schema>]
+    let staticEdgesInOrder: [HiveStaticEdge]
     public let staticEdgesByFrom: [HiveNodeID: [HiveNodeID]]
     public let joinEdges: [HiveJoinEdge]
     public let routersByFrom: [HiveNodeID: HiveRouter<Schema>]
@@ -93,6 +99,7 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         for edge in staticEdges {
             edgesByFrom[edge.from, default: []].append(edge.to)
         }
+        let staticEdgesInOrder = staticEdges.map { HiveStaticEdge(from: $0.from, to: $0.to) }
 
         var routersByFrom: [HiveNodeID: HiveRouter<Schema>] = [:]
         for entry in routers {
@@ -117,6 +124,7 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
             start: start,
             outputProjection: normalizedProjection,
             nodesByID: nodes,
+            staticEdgesInOrder: staticEdgesInOrder,
             staticEdgesByFrom: edgesByFrom,
             joinEdges: compiledJoinEdges,
             routersByFrom: routersByFrom

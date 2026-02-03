@@ -65,6 +65,29 @@ let graph = try builder.compile()
 To model joins, add a join edge:
 `builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("Join"))`
 
+## Export a Graph Description
+Generate a deterministic description of a compiled graph for tooling and inspection.
+
+```swift
+let description = graph.graphDescription()
+let encoder = JSONEncoder()
+encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+let json = try encoder.encode(description)
+```
+
+Determinism rules:
+- Node listing order: lexicographic UTF-8 by `nodeID.rawValue`.
+- Router listing order: lexicographic UTF-8 by `nodeID.rawValue`.
+- Edge listing order: preserves builder insertion order for static and join edges.
+
+## Generate Mermaid
+Render a compiled graph to Mermaid `flowchart` syntax.
+
+```swift
+let mermaid = HiveGraphMermaidExporter.export(graph.graphDescription())
+print(mermaid)
+```
+
 ## Run in an App
 Provide `HiveClock` and `HiveLogger` implementations from your app/runtime.
 
@@ -98,6 +121,38 @@ let outcome = try await handle.outcome.value
 Checkpoint/resume flow:
 - Provide a `HiveCheckpointStore` in `HiveEnvironment` and enable a checkpoint policy in `HiveRunOptions`.
 - On `.interrupted`, resume with `runtime.resume(threadID:interruptID:payload:options:)` using the provided `HiveInterruptID`.
+
+## Checkpoint Inspection
+Some checkpoint stores support optional history and load-by-id operations.
+
+Using `HiveRuntime` helpers:
+```swift
+let history = try await runtime.getCheckpointHistory(threadID: HiveThreadID("thread-1"), limit: 10)
+let checkpoint = try await runtime.getCheckpoint(threadID: HiveThreadID("thread-1"), id: history[0].id)
+```
+
+If the configured store does not support query operations, these calls throw `HiveCheckpointQueryError.unsupported`.
+
+## Stream Views
+`HiveEventStreamViews` provides typed, filtered views over a `HiveEvent` stream.
+
+Progress UI (steps):
+```swift
+let views = HiveEventStreamViews(handle.events)
+for try await event in views.steps() {
+    // event.kind: .started(stepIndex:, frontierCount:) or .finished(stepIndex:, nextFrontierCount:)
+}
+```
+
+Chat UI (model tokens):
+```swift
+let views = HiveEventStreamViews(handle.events)
+for try await event in views.model() {
+    if case .token(let text) = event.kind {
+        // Append text to the UI incrementally.
+    }
+}
+```
 
 ## Examples
 - `../../Examples/README.md`

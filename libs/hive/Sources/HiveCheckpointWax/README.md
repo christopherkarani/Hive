@@ -21,5 +21,13 @@ let environment = HiveEnvironment<MySchema>(
 let options = HiveRunOptions(checkpointPolicy: .everyStep)
 ```
 
+## Checkpoint Inspection
+HiveCheckpointWax supports optional history and load-by-id operations:
+
+```swift
+let history = try await store.listCheckpoints(threadID: HiveThreadID("thread-1"), limit: 25)
+let checkpoint = try await store.loadCheckpoint(threadID: HiveThreadID("thread-1"), id: history[0].id)
+```
+
 ## Example
 - `../../Tests/HiveCheckpointWaxTests/HiveCheckpointWaxSmokeTests.swift`

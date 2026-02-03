@@ -7,10 +7,12 @@ private enum HiveCheckpointWaxMetadataKey {
     static let stepIndex = "hive.stepIndex"
     static let checkpointID = "hive.checkpointID"
     static let runID = "hive.runID"
+    static let schemaVersion = "hive.schemaVersion"
+    static let graphVersion = "hive.graphVersion"
 }
 
 /// Wax-backed checkpoint store implementation.
-public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointStore {
+public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointQueryableStore {
 
     private static var checkpointKind: String { "hive.checkpoint" }
 
@@ -47,7 +49,9 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointStore {
             HiveCheckpointWaxMetadataKey.threadID: checkpoint.threadID.rawValue,
             HiveCheckpointWaxMetadataKey.stepIndex: String(checkpoint.stepIndex),
             HiveCheckpointWaxMetadataKey.checkpointID: checkpoint.id.rawValue,
-            HiveCheckpointWaxMetadataKey.runID: checkpoint.runID.rawValue.uuidString.lowercased()
+            HiveCheckpointWaxMetadataKey.runID: checkpoint.runID.rawValue.uuidString.lowercased(),
+            HiveCheckpointWaxMetadataKey.schemaVersion: checkpoint.schemaVersion,
+            HiveCheckpointWaxMetadataKey.graphVersion: checkpoint.graphVersion,
         ])
         let options = FrameMetaSubset(
             kind: "hive.checkpoint",
@@ -81,6 +85,75 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointStore {
 
         guard let best else { return nil }
         let payload = try await wax.frameContent(frameId: best.frameId)
+        return try decoder.decode(HiveCheckpoint<Schema>.self, from: payload)
+    }
+
+    public func listCheckpoints(threadID: HiveThreadID, limit: Int?) async throws -> [HiveCheckpointSummary] {
+        let metas = await wax.frameMetas()
+        var results: [(summary: HiveCheckpointSummary, frameID: UInt64)] = []
+        results.reserveCapacity(metas.count)
+
+        for meta in metas {
+            guard meta.kind == Self.checkpointKind else { continue }
+            guard let metadata = meta.metadata?.entries else { continue }
+            guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
+
+            guard let checkpointIDRaw = metadata[HiveCheckpointWaxMetadataKey.checkpointID] else { continue }
+            guard let runIDString = metadata[HiveCheckpointWaxMetadataKey.runID],
+                  let runUUID = UUID(uuidString: runIDString) else { continue }
+            guard let stepString = metadata[HiveCheckpointWaxMetadataKey.stepIndex],
+                  let stepIndex = Int(stepString) else { continue }
+
+            let summary = HiveCheckpointSummary(
+                id: HiveCheckpointID(checkpointIDRaw),
+                threadID: threadID,
+                runID: HiveRunID(runUUID),
+                stepIndex: stepIndex,
+                schemaVersion: metadata[HiveCheckpointWaxMetadataKey.schemaVersion],
+                graphVersion: metadata[HiveCheckpointWaxMetadataKey.graphVersion],
+                createdAt: nil,
+                backendID: String(meta.id)
+            )
+            results.append((summary: summary, frameID: meta.id))
+        }
+
+        results.sort { lhs, rhs in
+            if lhs.summary.stepIndex != rhs.summary.stepIndex {
+                return lhs.summary.stepIndex > rhs.summary.stepIndex
+            }
+            return lhs.frameID > rhs.frameID
+        }
+
+        if let limit, limit <= 0 {
+            return []
+        }
+        let summaries = results.map(\.summary)
+        if let limit {
+            return Array(summaries.prefix(limit))
+        }
+        return summaries
+    }
+
+    public func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<Schema>? {
+        let metas = await wax.frameMetas()
+        var bestFrameID: UInt64?
+        for meta in metas {
+            guard meta.kind == Self.checkpointKind else { continue }
+            guard let metadata = meta.metadata?.entries else { continue }
+            guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
+            guard metadata[HiveCheckpointWaxMetadataKey.checkpointID] == id.rawValue else { continue }
+
+            if let current = bestFrameID {
+                if meta.id > current {
+                    bestFrameID = meta.id
+                }
+            } else {
+                bestFrameID = meta.id
+            }
+        }
+
+        guard let bestFrameID else { return nil }
+        let payload = try await wax.frameContent(frameId: bestFrameID)
         return try decoder.decode(HiveCheckpoint<Schema>.self, from: payload)
     }
 }
