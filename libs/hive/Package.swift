@@ -56,7 +56,10 @@ let package = Package(
         ),
         .testTarget(
             name: "HiveCoreTests",
-            dependencies: ["HiveCore"]
+            dependencies: ["HiveCore"],
+            swiftSettings: [
+                .define("HIVE_V11_TRIGGERS"),
+            ]
         ),
         .testTarget(
             name: "HiveConduitTests",

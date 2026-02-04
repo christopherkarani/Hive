@@ -17,7 +17,7 @@ private func makeTempWaxURL() throws -> URL {
 @Test("HiveCheckpointWaxStore.listCheckpoints orders by stepIndex desc then newest frame")
 func hiveCheckpointWaxStoreListCheckpointsOrdering() async throws {
     let url = try makeTempWaxURL()
-    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
+    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url, walSize: 4 * 1024 * 1024)
 
     let threadID = HiveThreadID("thread-1")
 
@@ -76,7 +76,7 @@ func hiveCheckpointWaxStoreListCheckpointsOrdering() async throws {
 @Test("HiveCheckpointWaxStore.loadCheckpoint returns payload for matching ID")
 func hiveCheckpointWaxStoreLoadCheckpointByID() async throws {
     let url = try makeTempWaxURL()
-    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
+    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url, walSize: 4 * 1024 * 1024)
 
     let threadID = HiveThreadID("thread-1")
     let checkpoint = HiveCheckpoint<TestSchema>(
@@ -100,4 +100,3 @@ func hiveCheckpointWaxStoreLoadCheckpointByID() async throws {
     let missing = try await store.loadCheckpoint(threadID: threadID, id: HiveCheckpointID("missing"))
     #expect(missing == nil)
 }
-

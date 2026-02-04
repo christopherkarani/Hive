@@ -17,7 +17,7 @@ private func makeTempWaxURL() throws -> URL {
 @Test("HiveCheckpointWaxStore.loadLatest breaks ties by newest frame")
 func hiveCheckpointWaxStoreLoadLatestPrefersNewestFrameOnStepTie() async throws {
     let url = try makeTempWaxURL()
-    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
+    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url, walSize: 4 * 1024 * 1024)
 
     let threadID = HiveThreadID("thread-1")
     let stepIndex = 1
@@ -54,4 +54,3 @@ func hiveCheckpointWaxStoreLoadLatestPrefersNewestFrameOnStepTie() async throws 
     let loaded = try await store.loadLatest(threadID: threadID)
     #expect(loaded?.id.rawValue == "aaa")
 }
-

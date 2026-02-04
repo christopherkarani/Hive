@@ -214,7 +214,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             frontier: [],
             joinSeenParents: joinSeen,
             interruption: nil,
-            latestCheckpointID: nil
+            latestCheckpointID: nil,
+            channelVersionsByChannelID: [:],
+            versionsSeenByNodeID: [:],
+            updatedChannelsLastCommit: []
         )
     }
 
@@ -385,7 +388,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             frontier.append(
                 HiveFrontierTask(
                     seed: HiveTaskSeed(nodeID: entry.nodeID, local: overlay),
-                    provenance: entry.provenance
+                    provenance: entry.provenance,
+                    isJoinSeed: false
                 )
             )
         }
@@ -443,6 +447,59 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             joinSeenParents[edge.id] = Set(seenParents.map(HiveNodeID.init))
         }
 
+        var channelVersionsByChannelID: [HiveChannelID: UInt64] = [:]
+        channelVersionsByChannelID.reserveCapacity(checkpoint.channelVersionsByChannelID.count)
+        for (rawID, version) in checkpoint.channelVersionsByChannelID {
+            let channelID = HiveChannelID(rawID)
+            guard let spec = registry.channelSpecsByID[channelID], spec.scope == .global else {
+                throw HiveRuntimeError.checkpointCorrupt(
+                    field: "channelVersionsByChannelID",
+                    errorDescription: "unknown or non-global channel id \(rawID)"
+                )
+            }
+            if version > 0 {
+                channelVersionsByChannelID[channelID] = version
+            }
+        }
+
+        var versionsSeenByNodeID: [HiveNodeID: [HiveChannelID: UInt64]] = [:]
+        versionsSeenByNodeID.reserveCapacity(checkpoint.versionsSeenByNodeID.count)
+        for (rawNodeID, rawChannelVersions) in checkpoint.versionsSeenByNodeID {
+            let nodeID = HiveNodeID(rawNodeID)
+            guard graph.nodesByID[nodeID] != nil else {
+                throw HiveRuntimeError.checkpointCorrupt(
+                    field: "versionsSeenByNodeID",
+                    errorDescription: "unknown node id \(rawNodeID)"
+                )
+            }
+            var perChannel: [HiveChannelID: UInt64] = [:]
+            perChannel.reserveCapacity(rawChannelVersions.count)
+            for (rawChannelID, seenVersion) in rawChannelVersions {
+                let channelID = HiveChannelID(rawChannelID)
+                guard let spec = registry.channelSpecsByID[channelID], spec.scope == .global else {
+                    throw HiveRuntimeError.checkpointCorrupt(
+                        field: "versionsSeenByNodeID",
+                        errorDescription: "unknown or non-global channel id \(rawChannelID)"
+                    )
+                }
+                perChannel[channelID] = seenVersion
+            }
+            versionsSeenByNodeID[nodeID] = perChannel
+        }
+
+        var updatedChannelsLastCommit: [HiveChannelID] = []
+        updatedChannelsLastCommit.reserveCapacity(checkpoint.updatedChannelsLastCommit.count)
+        for rawID in checkpoint.updatedChannelsLastCommit {
+            let channelID = HiveChannelID(rawID)
+            guard let spec = registry.channelSpecsByID[channelID], spec.scope == .global else {
+                throw HiveRuntimeError.checkpointCorrupt(
+                    field: "updatedChannelsLastCommit",
+                    errorDescription: "unknown or non-global channel id \(rawID)"
+                )
+            }
+            updatedChannelsLastCommit.append(channelID)
+        }
+
         return ThreadState(
             runID: checkpoint.runID,
             stepIndex: checkpoint.stepIndex,
@@ -450,7 +507,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             frontier: frontier,
             joinSeenParents: joinSeenParents,
             interruption: checkpoint.interruption,
-            latestCheckpointID: checkpoint.id
+            latestCheckpointID: checkpoint.id,
+            channelVersionsByChannelID: channelVersionsByChannelID,
+            versionsSeenByNodeID: versionsSeenByNodeID,
+            updatedChannelsLastCommit: updatedChannelsLastCommit
         )
     }
 
@@ -495,15 +555,24 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             }
 
             if state.frontier.isEmpty {
-                state.frontier = graph.start.map { HiveFrontierTask(seed: HiveTaskSeed(nodeID: $0), provenance: .graph) }
+                state.frontier = graph.start.map {
+                    HiveFrontierTask(seed: HiveTaskSeed(nodeID: $0), provenance: .graph, isJoinSeed: false)
+                }
             }
 
             let inputContext = HiveInputContext(threadID: threadID, runID: state.runID, stepIndex: state.stepIndex)
             let inputWrites = try Schema.inputWrites(input, inputContext: inputContext)
             if !inputWrites.isEmpty {
                 var global = state.global
-                try applyInputWrites(inputWrites, to: &global)
+                let writtenChannels = try applyInputWrites(inputWrites, to: &global)
                 state.global = global
+                state.updatedChannelsLastCommit = writtenChannels
+                if !writtenChannels.isEmpty {
+                    for channelID in writtenChannels {
+                        let currentVersion = state.channelVersionsByChannelID[channelID] ?? 0
+                        state.channelVersionsByChannelID[channelID] = currentVersion &+ 1
+                    }
+                }
             }
             threadStates[threadID] = state
 
@@ -844,6 +913,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             nextState.stepIndex += 1
             nextState.global = postGlobal
             // Frontier and join barriers remain unchanged.
+            nextState.updatedChannelsLastCommit = writtenChannels
+            if !writtenChannels.isEmpty {
+                for channelID in writtenChannels {
+                    let currentVersion = nextState.channelVersionsByChannelID[channelID] ?? 0
+                    nextState.channelVersionsByChannelID[channelID] = currentVersion &+ 1
+                }
+            }
 
             let checkpointToSave: HiveCheckpoint<Schema>?
             if environment.checkpointStore != nil {
@@ -992,7 +1068,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     private func applyInputWrites(
         _ writes: [AnyHiveWrite<Schema>],
         to global: inout HiveGlobalStore<Schema>
-    ) throws {
+    ) throws -> [HiveChannelID] {
         var globalWritesByChannel: [HiveChannelID: [AnyHiveWrite<Schema>]] = [:]
         for write in writes {
             guard let spec = registry.channelSpecsByID[write.channelID] else {
@@ -1005,6 +1081,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             globalWritesByChannel[write.channelID, default: []].append(write)
         }
 
+        var written: [HiveChannelID] = []
         for spec in registry.sortedChannelSpecs where spec.scope == .global {
             let writesForChannel = globalWritesByChannel[spec.id] ?? []
             if writesForChannel.isEmpty { continue }
@@ -1020,7 +1097,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 current = try spec._reduceBox(current, write.value)
             }
             try global.setAny(current, for: spec.id)
+            written.append(spec.id)
         }
+
+        return written
     }
 
     private func selectInterrupt(
@@ -1179,6 +1259,23 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             joinBarrierSeenByJoinID[edge.id] = sorted.map(\.rawValue)
         }
 
+        var channelVersionsByChannelID: [String: UInt64] = [:]
+        channelVersionsByChannelID.reserveCapacity(state.channelVersionsByChannelID.count)
+        for (channelID, version) in state.channelVersionsByChannelID where version > 0 {
+            channelVersionsByChannelID[channelID.rawValue] = version
+        }
+
+        var versionsSeenByNodeID: [String: [String: UInt64]] = [:]
+        versionsSeenByNodeID.reserveCapacity(state.versionsSeenByNodeID.count)
+        for (nodeID, perChannel) in state.versionsSeenByNodeID {
+            var rawPerChannel: [String: UInt64] = [:]
+            rawPerChannel.reserveCapacity(perChannel.count)
+            for (channelID, seenVersion) in perChannel {
+                rawPerChannel[channelID.rawValue] = seenVersion
+            }
+            versionsSeenByNodeID[nodeID.rawValue] = rawPerChannel
+        }
+
         return HiveCheckpoint(
             id: checkpointID,
             threadID: threadID,
@@ -1186,6 +1283,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             stepIndex: state.stepIndex,
             schemaVersion: graph.schemaVersion,
             graphVersion: graph.graphVersion,
+            checkpointFormatVersion: "HCP2",
+            channelVersionsByChannelID: channelVersionsByChannelID,
+            versionsSeenByNodeID: versionsSeenByNodeID,
+            updatedChannelsLastCommit: state.updatedChannelsLastCommit.map(\.rawValue),
             globalDataByChannelID: globalDataByChannelID,
             frontier: checkpointFrontier,
             joinBarrierSeenByJoinID: joinBarrierSeenByJoinID,
@@ -1217,6 +1318,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         emitter: HiveEventEmitter,
         resume: HiveResume<Schema>?
     ) async throws -> StepOutcome<Schema> {
+        var state = state
         let stepIndex = state.stepIndex
         guard UInt32(exactly: stepIndex) != nil else {
             throw HiveRuntimeError.stepIndexOutOfRange(stepIndex: stepIndex)
@@ -1229,6 +1331,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             stepIndex: stepIndex,
             debugPayloads: options.debugPayloads
         )
+
+        snapshotVersionsSeenForStepStart(tasks: tasks, state: &state)
 
         emitter.emit(
             kind: .stepStarted(stepIndex: stepIndex, frontierCount: tasks.count),
@@ -1364,8 +1468,19 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         var nextState = state
         nextState.stepIndex += 1
         nextState.global = commitResult.global
-        nextState.frontier = commitResult.frontier
         nextState.joinSeenParents = commitResult.joinSeenParents
+        nextState.updatedChannelsLastCommit = commitResult.writtenGlobalChannels
+        if !commitResult.writtenGlobalChannels.isEmpty {
+            for channelID in commitResult.writtenGlobalChannels {
+                let current = nextState.channelVersionsByChannelID[channelID] ?? 0
+                nextState.channelVersionsByChannelID[channelID] = current &+ 1
+            }
+        }
+        nextState.frontier = filterFrontierForTriggers(
+            commitResult.frontier,
+            channelVersionsByChannelID: nextState.channelVersionsByChannelID,
+            versionsSeenByNodeID: nextState.versionsSeenByNodeID
+        )
 
         let selectedInterrupt = try selectInterrupt(tasks: tasks, outputs: outputs)
         var checkpointToSave: HiveCheckpoint<Schema>?
@@ -1443,6 +1558,83 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             )
         }
         return tasks
+    }
+
+    private func snapshotVersionsSeenForStepStart(
+        tasks: [HiveTask<Schema>],
+        state: inout ThreadState<Schema>
+    ) {
+        if tasks.isEmpty { return }
+
+        for task in tasks {
+            guard let node = graph.nodesByID[task.nodeID] else { continue }
+            let channels = node.runWhen.triggerChannels
+            if channels.isEmpty { continue }
+
+            var perChannel = state.versionsSeenByNodeID[task.nodeID] ?? [:]
+            perChannel.reserveCapacity(max(perChannel.count, channels.count))
+            for channelID in channels {
+                perChannel[channelID] = state.channelVersionsByChannelID[channelID] ?? 0
+            }
+            state.versionsSeenByNodeID[task.nodeID] = perChannel
+        }
+    }
+
+    private func filterFrontierForTriggers(
+        _ frontier: [HiveFrontierTask<Schema>],
+        channelVersionsByChannelID: [HiveChannelID: UInt64],
+        versionsSeenByNodeID: [HiveNodeID: [HiveChannelID: UInt64]]
+    ) -> [HiveFrontierTask<Schema>] {
+        if frontier.isEmpty { return [] }
+
+        func channelChanged(
+            channelID: HiveChannelID,
+            seen: [HiveChannelID: UInt64]?
+        ) -> Bool {
+            let current = channelVersionsByChannelID[channelID] ?? 0
+            guard let seenValue = seen?[channelID] else { return true }
+            return current > seenValue
+        }
+
+        var filtered: [HiveFrontierTask<Schema>] = []
+        filtered.reserveCapacity(frontier.count)
+
+        for entry in frontier {
+            if entry.isJoinSeed {
+                filtered.append(entry)
+                continue
+            }
+
+            guard let node = graph.nodesByID[entry.seed.nodeID] else {
+                filtered.append(entry)
+                continue
+            }
+
+            switch node.runWhen.normalized {
+            case .always:
+                filtered.append(entry)
+            case .anyOf(let channels):
+                if channels.isEmpty {
+                    filtered.append(entry)
+                    continue
+                }
+                let seen = versionsSeenByNodeID[entry.seed.nodeID]
+                if channels.contains(where: { channelChanged(channelID: $0, seen: seen) }) {
+                    filtered.append(entry)
+                }
+            case .allOf(let channels):
+                if channels.isEmpty {
+                    filtered.append(entry)
+                    continue
+                }
+                let seen = versionsSeenByNodeID[entry.seed.nodeID]
+                if channels.allSatisfy({ channelChanged(channelID: $0, seen: seen) }) {
+                    filtered.append(entry)
+                }
+            }
+        }
+
+        return filtered
     }
 
     private static func executeTasks(
@@ -1837,6 +2029,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         var joinSeen = state.joinSeenParents
+        var joinSeedKeys: Set<SeedKey> = []
         for task in tasks {
             for edge in graph.joinEdges where edge.target == task.nodeID {
                 let parentsSet = Set(edge.parents)
@@ -1856,21 +2049,35 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             joinSeen[edge.id] = seen
             let isAvailable = (seen == parentsSet)
             if !wasAvailable && isAvailable {
-                nextGraphSeeds.append(HiveTaskSeed(nodeID: edge.target))
+                let seed = HiveTaskSeed<Schema>(nodeID: edge.target)
+                nextGraphSeeds.append(seed)
+                let fingerprint = try HiveTaskLocalFingerprint.digest(
+                    registry: registry,
+                    initialCache: initialCache,
+                    overlay: seed.local,
+                    debugPayloads: options.debugPayloads
+                )
+                joinSeedKeys.insert(SeedKey(nodeID: seed.nodeID, fingerprint: fingerprint))
             }
         }
 
         let dedupedGraphSeeds = try dedupeGraphSeeds(nextGraphSeeds, options: options)
 
-        try validateSeedNodes(dedupedGraphSeeds, spawnSeeds: nextSpawnSeeds)
+        try validateSeedNodes(dedupedGraphSeeds.map(\.seed), spawnSeeds: nextSpawnSeeds)
 
         var nextFrontier: [HiveFrontierTask<Schema>] = []
         nextFrontier.reserveCapacity(dedupedGraphSeeds.count + nextSpawnSeeds.count)
-        for seed in dedupedGraphSeeds {
-            nextFrontier.append(HiveFrontierTask(seed: seed, provenance: .graph))
+        for entry in dedupedGraphSeeds {
+            nextFrontier.append(
+                HiveFrontierTask(
+                    seed: entry.seed,
+                    provenance: .graph,
+                    isJoinSeed: joinSeedKeys.contains(entry.key)
+                )
+            )
         }
         for seed in nextSpawnSeeds {
-            nextFrontier.append(HiveFrontierTask(seed: seed, provenance: .spawn))
+            nextFrontier.append(HiveFrontierTask(seed: seed, provenance: .spawn, isJoinSeed: false))
         }
 
         return CommitResult(
@@ -1938,9 +2145,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     private func dedupeGraphSeeds(
         _ seeds: [HiveTaskSeed<Schema>],
         options: HiveRunOptions
-    ) throws -> [HiveTaskSeed<Schema>] {
+    ) throws -> [(seed: HiveTaskSeed<Schema>, key: SeedKey)] {
         var seen: Set<SeedKey> = []
-        var deduped: [HiveTaskSeed<Schema>] = []
+        var deduped: [(seed: HiveTaskSeed<Schema>, key: SeedKey)] = []
         deduped.reserveCapacity(seeds.count)
 
         for seed in seeds {
@@ -1952,7 +2159,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             )
             let key = SeedKey(nodeID: seed.nodeID, fingerprint: fingerprint)
             if seen.insert(key).inserted {
-                deduped.append(seed)
+                deduped.append((seed: seed, key: key))
             }
         }
 
@@ -2118,6 +2325,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 private struct HiveFrontierTask<Schema: HiveSchema>: Sendable {
     let seed: HiveTaskSeed<Schema>
     let provenance: HiveTaskProvenance
+    let isJoinSeed: Bool
 }
 
 private struct ThreadState<Schema: HiveSchema>: Sendable {
@@ -2128,6 +2336,9 @@ private struct ThreadState<Schema: HiveSchema>: Sendable {
     var joinSeenParents: [String: Set<HiveNodeID>]
     var interruption: HiveInterrupt<Schema>?
     var latestCheckpointID: HiveCheckpointID?
+    var channelVersionsByChannelID: [HiveChannelID: UInt64]
+    var versionsSeenByNodeID: [HiveNodeID: [HiveChannelID: UInt64]]
+    var updatedChannelsLastCommit: [HiveChannelID]
 }
 
 private struct WriteRecord<Schema: HiveSchema>: Sendable {

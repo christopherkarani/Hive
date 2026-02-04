@@ -20,4 +20,7 @@ public enum HiveCompilationError: Error, Sendable {
     case duplicateJoinEdge(joinID: String)
     case outputProjectionUnknownChannel(HiveChannelID)
     case outputProjectionIncludesTaskLocal(HiveChannelID)
+    case invalidNodeRunWhenChannelsEmpty(nodeID: HiveNodeID)
+    case invalidNodeRunWhenUnknownChannel(nodeID: HiveNodeID, channelID: HiveChannelID)
+    case invalidNodeRunWhenIncludesTaskLocalChannel(nodeID: HiveNodeID, channelID: HiveChannelID)
 }
