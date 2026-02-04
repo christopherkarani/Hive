@@ -179,7 +179,7 @@ public extension HiveReducer {
     ) -> HiveReducer<HiveTopicChannelValue<TopicValue>>
     where Value == HiveTopicChannelValue<TopicValue>, TopicValue: Sendable & Codable {
         precondition(maxValuesPerTopic > 0, "maxValuesPerTopic must be greater than 0.")
-        HiveReducer<HiveTopicChannelValue<TopicValue>> { current, update in
+        return HiveReducer<HiveTopicChannelValue<TopicValue>> { current, update in
             func extractState(_ value: HiveTopicChannelValue<TopicValue>) -> HiveTopicState<TopicValue> {
                 switch value {
                 case .state(let state):

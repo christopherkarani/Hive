@@ -14,10 +14,9 @@ Deterministic, Swift‑native graph runtime for agent workflows. Built for iOS/m
 - On‑device or hybrid inference pipelines with deterministic testing.
 
 ## Quickstart (SwiftPM)
-Hive lives in `libs/hive` in this repo.
+Hive uses local path dependencies (`../Conduit` and `../rag/Wax`).
 
 ```sh
-cd libs/hive
 swift build
 swift test
 ```
@@ -35,21 +34,21 @@ A small graph that fans out work, waits on a join, interrupts for approval, then
 import HiveCore
 
 // Build a graph, run it, and handle interrupt/resume.
-// See libs/hive/Examples/TinyGraph/main.swift for the full runnable example.
+// See Sources/Hive/Examples/TinyGraph/main.swift for the full runnable example.
 ```
 
 ## Repo Layout
-- `libs/hive` — Swift package (HiveCore + adapters + examples)
-- `HIVE_SPEC.md` — normative spec
+- `Sources/Hive` — Swift package sources (HiveCore + adapters + examples)
+- `docs/HIVE_SPEC.md` — normative spec
 - `docs/` — release checklist and other docs
 
 ## Status
 Hive v1 is in active development. The spec is stable; APIs are still evolving.
 
 ## Learn More
-- `HIVE_SPEC.md` for the full runtime spec and semantics.
-- `libs/hive/README.md` for module‑level docs.
-- `libs/hive/Examples/README.md` for runnable examples.
+- `docs/HIVE_SPEC.md` for the full runtime spec and semantics.
+- `Sources/Hive/README.md` for module‑level docs.
+- `Sources/Hive/Examples/README.md` for runnable examples.
 
 ## Contributing
 Issues and PRs are welcome. If Hive helps your work, a star makes it easier for others to find.
