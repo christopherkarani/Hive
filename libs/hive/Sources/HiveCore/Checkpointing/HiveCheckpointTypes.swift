@@ -70,6 +70,17 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
     public let stepIndex: Int
     public let schemaVersion: String
     public let graphVersion: String
+    /// Checkpoint format tag for forwards/backwards compatibility.
+    ///
+    /// - `"HCP1"`: v1 format without channel-versioning fields.
+    /// - `"HCP2"`: v1.1 format with channel versioning + triggers state.
+    public let checkpointFormatVersion: String
+    /// Version counters for global channels (missing entry implies version 0).
+    public let channelVersionsByChannelID: [String: UInt64]
+    /// Per-node versionsSeen snapshots for trigger channels.
+    public let versionsSeenByNodeID: [String: [String: UInt64]]
+    /// Optional convenience field for debugging: channels written in the last committed step.
+    public let updatedChannelsLastCommit: [String]
     public let globalDataByChannelID: [String: Data]
     public let frontier: [HiveCheckpointTask]
     public let joinBarrierSeenByJoinID: [String: [String]]
@@ -93,10 +104,84 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         self.stepIndex = stepIndex
         self.schemaVersion = schemaVersion
         self.graphVersion = graphVersion
+        self.checkpointFormatVersion = "HCP2"
+        self.channelVersionsByChannelID = [:]
+        self.versionsSeenByNodeID = [:]
+        self.updatedChannelsLastCommit = []
         self.globalDataByChannelID = globalDataByChannelID
         self.frontier = frontier
         self.joinBarrierSeenByJoinID = joinBarrierSeenByJoinID
         self.interruption = interruption
+    }
+
+    public init(
+        id: HiveCheckpointID,
+        threadID: HiveThreadID,
+        runID: HiveRunID,
+        stepIndex: Int,
+        schemaVersion: String,
+        graphVersion: String,
+        checkpointFormatVersion: String,
+        channelVersionsByChannelID: [String: UInt64],
+        versionsSeenByNodeID: [String: [String: UInt64]],
+        updatedChannelsLastCommit: [String],
+        globalDataByChannelID: [String: Data],
+        frontier: [HiveCheckpointTask],
+        joinBarrierSeenByJoinID: [String: [String]],
+        interruption: HiveInterrupt<Schema>?
+    ) {
+        self.id = id
+        self.threadID = threadID
+        self.runID = runID
+        self.stepIndex = stepIndex
+        self.schemaVersion = schemaVersion
+        self.graphVersion = graphVersion
+        self.checkpointFormatVersion = checkpointFormatVersion
+        self.channelVersionsByChannelID = channelVersionsByChannelID
+        self.versionsSeenByNodeID = versionsSeenByNodeID
+        self.updatedChannelsLastCommit = updatedChannelsLastCommit
+        self.globalDataByChannelID = globalDataByChannelID
+        self.frontier = frontier
+        self.joinBarrierSeenByJoinID = joinBarrierSeenByJoinID
+        self.interruption = interruption
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case threadID
+        case runID
+        case stepIndex
+        case schemaVersion
+        case graphVersion
+        case checkpointFormatVersion
+        case channelVersionsByChannelID
+        case versionsSeenByNodeID
+        case updatedChannelsLastCommit
+        case globalDataByChannelID
+        case frontier
+        case joinBarrierSeenByJoinID
+        case interruption
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        self.id = try container.decode(HiveCheckpointID.self, forKey: .id)
+        self.threadID = try container.decode(HiveThreadID.self, forKey: .threadID)
+        self.runID = try container.decode(HiveRunID.self, forKey: .runID)
+        self.stepIndex = try container.decode(Int.self, forKey: .stepIndex)
+        self.schemaVersion = try container.decode(String.self, forKey: .schemaVersion)
+        self.graphVersion = try container.decode(String.self, forKey: .graphVersion)
+
+        self.checkpointFormatVersion = try container.decodeIfPresent(String.self, forKey: .checkpointFormatVersion) ?? "HCP1"
+        self.channelVersionsByChannelID = try container.decodeIfPresent([String: UInt64].self, forKey: .channelVersionsByChannelID) ?? [:]
+        self.versionsSeenByNodeID = try container.decodeIfPresent([String: [String: UInt64]].self, forKey: .versionsSeenByNodeID) ?? [:]
+        self.updatedChannelsLastCommit = try container.decodeIfPresent([String].self, forKey: .updatedChannelsLastCommit) ?? []
+
+        self.globalDataByChannelID = try container.decode([String: Data].self, forKey: .globalDataByChannelID)
+        self.frontier = try container.decode([HiveCheckpointTask].self, forKey: .frontier)
+        self.joinBarrierSeenByJoinID = try container.decode([String: [String]].self, forKey: .joinBarrierSeenByJoinID)
+        self.interruption = try container.decodeIfPresent(HiveInterrupt<Schema>.self, forKey: .interruption)
     }
 }
 

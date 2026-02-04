@@ -32,9 +32,41 @@ enum HiveVersioning {
         joinEdges: [(parents: [HiveNodeID], target: HiveNodeID)],
         outputProjection: HiveOutputProjection
     ) -> String {
-        var bytes = Data()
-        bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x31]) // HGV1
+        let usesTriggers = nodesByID.values.contains { $0.runWhen.isDefaultAlways == false }
 
+        var bytes = Data()
+        if usesTriggers {
+            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x32]) // HGV2
+        } else {
+            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x31]) // HGV1
+        }
+
+        appendGraphCore(
+            start: start,
+            nodesByID: nodesByID,
+            routerFrom: routerFrom,
+            staticEdges: staticEdges,
+            joinEdges: joinEdges,
+            outputProjection: outputProjection,
+            to: &bytes
+        )
+
+        if usesTriggers {
+            appendTriggerConfig(nodesByID: nodesByID, to: &bytes)
+        }
+
+        return sha256Hex(bytes)
+    }
+
+    private static func appendGraphCore<Schema: HiveSchema>(
+        start: [HiveNodeID],
+        nodesByID: [HiveNodeID: HiveCompiledNode<Schema>],
+        routerFrom: [HiveNodeID],
+        staticEdges: [(from: HiveNodeID, to: HiveNodeID)],
+        joinEdges: [(parents: [HiveNodeID], target: HiveNodeID)],
+        outputProjection: HiveOutputProjection,
+        to bytes: inout Data
+    ) {
         bytes.append(0x53) // S
         appendUInt32BE(UInt32(start.count), to: &bytes)
         for id in start {
@@ -85,8 +117,38 @@ enum HiveVersioning {
                 appendID(id.rawValue, to: &bytes)
             }
         }
+    }
 
-        return sha256Hex(bytes)
+    private static func appendTriggerConfig<Schema: HiveSchema>(
+        nodesByID: [HiveNodeID: HiveCompiledNode<Schema>],
+        to bytes: inout Data
+    ) {
+        bytes.append(0x54) // T
+        let triggerNodes = nodesByID.values
+            .filter { $0.runWhen.isDefaultAlways == false }
+            .sorted { HiveOrdering.lexicographicallyPrecedes($0.id.rawValue, $1.id.rawValue) }
+
+        appendUInt32BE(UInt32(triggerNodes.count), to: &bytes)
+        for node in triggerNodes {
+            appendID(node.id.rawValue, to: &bytes)
+            switch node.runWhen.normalized {
+            case .always:
+                bytes.append(0)
+                appendUInt32BE(0, to: &bytes)
+            case .anyOf(let channels):
+                bytes.append(1)
+                appendUInt32BE(UInt32(channels.count), to: &bytes)
+                for id in channels {
+                    appendID(id.rawValue, to: &bytes)
+                }
+            case .allOf(let channels):
+                bytes.append(2)
+                appendUInt32BE(UInt32(channels.count), to: &bytes)
+                for id in channels {
+                    appendID(id.rawValue, to: &bytes)
+                }
+            }
+        }
     }
 
     private static func appendID(_ value: String, to data: inout Data) {

@@ -2,11 +2,18 @@
 public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
     public let id: HiveNodeID
     public let retryPolicy: HiveRetryPolicy
+    public let runWhen: HiveNodeRunWhen
     public let run: HiveNode<Schema>
 
-    public init(id: HiveNodeID, retryPolicy: HiveRetryPolicy, run: @escaping HiveNode<Schema>) {
+    public init(
+        id: HiveNodeID,
+        retryPolicy: HiveRetryPolicy,
+        runWhen: HiveNodeRunWhen = .always,
+        run: @escaping HiveNode<Schema>
+    ) {
         self.id = id
         self.retryPolicy = retryPolicy
+        self.runWhen = runWhen.normalized
         self.run = run
     }
 }
@@ -65,10 +72,11 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
     public mutating func addNode(
         _ id: HiveNodeID,
         retryPolicy: HiveRetryPolicy = .none,
+        runWhen: HiveNodeRunWhen = .always,
         _ node: @escaping HiveNode<Schema>
     ) {
         nodeInsertions.append(id)
-        nodes[id] = HiveCompiledNode(id: id, retryPolicy: retryPolicy, run: node)
+        nodes[id] = HiveCompiledNode(id: id, retryPolicy: retryPolicy, runWhen: runWhen, run: node)
     }
 
     public mutating func addEdge(from: HiveNodeID, to: HiveNodeID) {
@@ -91,6 +99,7 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         let registry = try HiveSchemaRegistry<Schema>()
 
         try validateGraphStructure()
+        try validateNodeRunWhen(registry: registry)
 
         let normalizedProjection = outputProjection.normalized()
         try validateOutputProjection(normalizedProjection, registry: registry)
@@ -218,6 +227,33 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
                 throw HiveCompilationError.duplicateJoinEdge(joinID: joinID)
             }
             seenJoinIDs.insert(joinID)
+        }
+    }
+
+    private func validateNodeRunWhen(registry: HiveSchemaRegistry<Schema>) throws {
+        let sortedNodeIDs = nodes.keys.sorted { HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue) }
+        for nodeID in sortedNodeIDs {
+            guard let node = nodes[nodeID] else { continue }
+            let normalized = node.runWhen.normalized
+            switch normalized {
+            case .always:
+                continue
+            case .anyOf(let channels), .allOf(let channels):
+                if channels.isEmpty {
+                    throw HiveCompilationError.invalidNodeRunWhenChannelsEmpty(nodeID: nodeID)
+                }
+                for channelID in channels {
+                    guard let spec = registry.channelSpecsByID[channelID] else {
+                        throw HiveCompilationError.invalidNodeRunWhenUnknownChannel(nodeID: nodeID, channelID: channelID)
+                    }
+                    if spec.scope != .global {
+                        throw HiveCompilationError.invalidNodeRunWhenIncludesTaskLocalChannel(
+                            nodeID: nodeID,
+                            channelID: channelID
+                        )
+                    }
+                }
+            }
         }
     }
 
