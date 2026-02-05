@@ -51,4 +51,5 @@ public enum HiveRuntimeError: Error, Sendable {
     case modelClientMissing
     case modelStreamInvalid(String)
     case toolRegistryMissing
+    case modelToolLoopMaxModelInvocationsExceeded(maxModelInvocations: Int)
 }

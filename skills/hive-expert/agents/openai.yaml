@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hive Expert"
+  short_description: "Deterministic Hive workflows in Swift"
+  default_prompt: "Use Hive (HiveCore + HiveDSL + adapters) to design deterministic agent workflows. Ask clarifying questions, propose an API-first design, write Swift Testing tests first, then implement. Pay special attention to channels/reducers, superstep ordering, joins, interrupts/resume, checkpointing, model/tool integration, and determinism."

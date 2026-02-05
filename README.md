@@ -10,7 +10,9 @@ Deterministic, Swift‑native graph runtime for agent workflows. Built for iOS/m
 
 ## What You Can Build
 - Agent graphs with fan‑out, joins, and tool approval gates.
+- SwiftUI‑style workflows with `HiveDSL` (result builders, composable nodes/branches).
 - Long‑running workflows that pause for human input and resume reliably.
+- RAG‑enabled pipelines via `HiveRAGWax` (Wax recall + snippets).
 - On‑device or hybrid inference pipelines with deterministic testing.
 
 ## Quickstart (SwiftPM)
@@ -39,7 +41,7 @@ import HiveCore
 ```
 
 ## Repo Layout
-- `libs/hive` — Swift package (HiveCore + adapters + examples)
+- `libs/hive` — Swift package (HiveCore + HiveDSL + adapters + examples)
 - `HIVE_SPEC.md` — normative spec
 - `docs/` — release checklist and other docs
 
@@ -48,7 +50,7 @@ Hive v1 is in active development. The spec is stable; APIs are still evolving.
 
 ## Learn More
 - `HIVE_SPEC.md` for the full runtime spec and semantics.
-- `libs/hive/README.md` for module‑level docs.
+- `libs/hive/README.md` for DSL examples, macros, and module‑level docs.
 - `libs/hive/Examples/README.md` for runnable examples.
 
 ## Contributing
