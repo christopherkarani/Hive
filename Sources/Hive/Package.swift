@@ -1,6 +1,7 @@
 // swift-tools-version: 6.2
 
 import PackageDescription
+import CompilerPluginSupport
 
 let package = Package(
     name: "Hive",
@@ -11,18 +12,29 @@ let package = Package(
     products: [
         .library(name: "Hive", targets: ["Hive"]),
         .library(name: "HiveCore", targets: ["HiveCore"]),
+        .library(name: "HiveDSL", targets: ["HiveDSL"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
+        .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
+        .library(name: "HiveMacros", targets: ["HiveMacros"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
-        .package(path: "../../../Conduit"),
-        .package(path: "../../../rag/Wax"),
+        .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"),
+        .package(
+            url: "https://github.com/christopherkarani/Wax.git",
+            from: "0.1.3"
+        ),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
     ],
     targets: [
         .target(
             name: "HiveCore",
             exclude: ["README.md"]
+        ),
+        .target(
+            name: "HiveDSL",
+            dependencies: ["HiveCore"]
         ),
         .target(
             name: "HiveConduit",
@@ -41,9 +53,33 @@ let package = Package(
             exclude: ["README.md"]
         ),
         .target(
+            name: "HiveRAGWax",
+            dependencies: [
+                "HiveDSL",
+                .product(name: "Wax", package: "Wax"),
+            ]
+        ),
+        .macro(
+            name: "HiveMacrosImpl",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+            ]
+        ),
+        .target(
+            name: "HiveMacros",
+            dependencies: [
+                "HiveMacrosImpl",
+                "HiveCore",
+            ]
+        ),
+        .target(
             name: "Hive",
             dependencies: [
                 "HiveCore",
+                "HiveDSL",
                 "HiveConduit",
                 "HiveCheckpointWax",
             ],
@@ -62,12 +98,31 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "HiveDSLTests",
+            dependencies: ["HiveDSL"]
+        ),
+        .testTarget(
             name: "HiveConduitTests",
-            dependencies: ["HiveConduit"]
+            dependencies: [
+                "HiveConduit",
+                "HiveDSL",
+            ]
         ),
         .testTarget(
             name: "HiveCheckpointWaxTests",
             dependencies: ["HiveCheckpointWax"]
+        ),
+        .testTarget(
+            name: "HiveRAGWaxTests",
+            dependencies: ["HiveRAGWax"]
+        ),
+        .testTarget(
+            name: "HiveMacrosTests",
+            dependencies: [
+                "HiveMacros",
+                "HiveMacrosImpl",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
+            ]
         ),
         .testTarget(
             name: "HiveTests",

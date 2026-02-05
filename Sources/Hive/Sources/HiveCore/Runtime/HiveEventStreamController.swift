@@ -32,9 +32,13 @@ internal final class HiveEventStreamController: @unchecked Sendable {
     }
 
     func makeStream() -> AsyncThrowingStream<HiveEvent, Error> {
-        // Avoid relying on the consumer being *exactly* awaiting at yield time, which can amplify droppable drops
-        // under small `capacity` values. The runtime's own queue remains the source of truth for capacity.
-        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingOldest(1)) { continuation in
+        // Use a `.bufferingNewest(...)` continuation so the producer side never deadlocks if the consumer
+        // is slow (or absent). When the continuation buffer is full, `yield` reports `.dropped`, but the newest
+        // element is still accepted (old buffered elements are discarded), allowing us to continue draining.
+        //
+        // NOTE: We keep a minimum continuation buffer to avoid small `eventBufferCapacity` values causing
+        // excessive drops of important events in tests and UI streams.
+        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingNewest(max(64, capacity))) { continuation in
             Task.detached(priority: .userInitiated) {
                 await self.pump(into: continuation)
             }
@@ -134,13 +138,15 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                         consumeFirst()
                         break
                     case .dropped:
-                        await Task.yield()
-                        continue
+                        // For `.bufferingNewest`, `.dropped` indicates older buffered elements were evicted to
+                        // accept this event. Treat it as success and continue draining.
+                        consumeFirst()
+                        break
                     case .terminated:
                         return
                     @unknown default:
-                        await Task.yield()
-                        continue
+                        consumeFirst()
+                        break
                     }
                 }
             case .finished:
