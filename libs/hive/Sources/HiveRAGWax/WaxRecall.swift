@@ -3,19 +3,19 @@ import Wax
 
 public struct WaxRecall<Schema: HiveSchema>: WorkflowComponent, Sendable {
     private let id: HiveNodeID
-    private let memory: SendableKeyPath<Schema.Context, MemoryOrchestrator>
+    private let memoryResolver: MemoryResolver<Schema.Context>
     private let queryProvider: @Sendable (HiveStoreView<Schema>) throws -> String
     private let writeSnippetsTo: HiveChannelKey<Schema, [HiveRAGSnippet]>
 
     public init(
         _ id: String,
-        memory: KeyPath<Schema.Context, MemoryOrchestrator>,
+        memory: sending KeyPath<Schema.Context, MemoryOrchestrator>,
         query: String,
         writeSnippetsTo: HiveChannelKey<Schema, [HiveRAGSnippet]>
     ) {
         self.init(
             id: HiveNodeID(id),
-            memory: SendableKeyPath(memory),
+            memoryResolver: MemoryResolver(memory),
             queryProvider: { _ in query },
             writeSnippetsTo: writeSnippetsTo
         )
@@ -23,13 +23,13 @@ public struct WaxRecall<Schema: HiveSchema>: WorkflowComponent, Sendable {
 
     public init(
         _ id: String,
-        memory: KeyPath<Schema.Context, MemoryOrchestrator>,
+        memory: sending KeyPath<Schema.Context, MemoryOrchestrator>,
         query: @escaping @Sendable (HiveStoreView<Schema>) throws -> String,
         writeSnippetsTo: HiveChannelKey<Schema, [HiveRAGSnippet]>
     ) {
         self.init(
             id: HiveNodeID(id),
-            memory: SendableKeyPath(memory),
+            memoryResolver: MemoryResolver(memory),
             queryProvider: query,
             writeSnippetsTo: writeSnippetsTo
         )
@@ -37,12 +37,12 @@ public struct WaxRecall<Schema: HiveSchema>: WorkflowComponent, Sendable {
 
     private init(
         id: HiveNodeID,
-        memory: SendableKeyPath<Schema.Context, MemoryOrchestrator>,
+        memoryResolver: MemoryResolver<Schema.Context>,
         queryProvider: @escaping @Sendable (HiveStoreView<Schema>) throws -> String,
         writeSnippetsTo: HiveChannelKey<Schema, [HiveRAGSnippet]>
     ) {
         self.id = id
-        self.memory = memory
+        self.memoryResolver = memoryResolver
         self.queryProvider = queryProvider
         self.writeSnippetsTo = writeSnippetsTo
     }
@@ -57,13 +57,13 @@ public struct WaxRecall<Schema: HiveSchema>: WorkflowComponent, Sendable {
     }
 
     public func apply(to builder: inout HiveGraphBuilder<Schema>, design _: inout WorkflowDesign) throws {
-        let memoryKeyPath = memory
+        let memoryResolver = memoryResolver
         let queryProvider = queryProvider
         let writeSnippetsTo = writeSnippetsTo
 
         builder.addNode(id) { input in
             let query = try queryProvider(input.store)
-            let memory = input.context[keyPath: memoryKeyPath.keyPath]
+            let memory = await memoryResolver.resolve(from: input.context)
 
             let ctx = try await memory.recall(query: query)
             let snippets = ctx.items.map(HiveRAGSnippet.init)
@@ -73,10 +73,14 @@ public struct WaxRecall<Schema: HiveSchema>: WorkflowComponent, Sendable {
     }
 }
 
-private struct SendableKeyPath<Root, Value>: @unchecked Sendable {
-    let keyPath: KeyPath<Root, Value>
+private actor MemoryResolver<Context: Sendable> {
+    private let keyPath: KeyPath<Context, MemoryOrchestrator>
 
-    init(_ keyPath: KeyPath<Root, Value>) {
+    init(_ keyPath: sending KeyPath<Context, MemoryOrchestrator>) {
         self.keyPath = keyPath
+    }
+
+    func resolve(from context: Context) -> MemoryOrchestrator {
+        context[keyPath: keyPath]
     }
 }

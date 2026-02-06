@@ -550,8 +550,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
-            if let interruption = state.interruption {
-                throw HiveRuntimeError.interruptPending(interruptID: interruption.id)
+            if state.interruption != nil {
+                // Treat new input as a cancellation of any pending interruption.
+                // This mirrors chat-style semantics where a user message can supersede an
+                // outstanding human-in-the-loop prompt (e.g. tool approval).
+                state.interruption = nil
+                state.frontier = []
+                state.joinSeenParents = [:]
             }
 
             if state.frontier.isEmpty {
