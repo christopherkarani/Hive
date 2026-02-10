@@ -56,17 +56,11 @@ func hiveCheckpointWaxStoreLoadLatestPrefersNewestFrameOnStepTie() async throws 
         stepIndex: stepIndex
     )
 
-    do {
-        try await store.save(older)
-        try await store.save(newer)
+    try await store.save(older)
+    try await store.save(newer)
 
-        let loaded = try await store.loadLatest(threadID: threadID)
-        #expect(loaded?.id.rawValue == "aaa")
-        try await store.close()
-    } catch {
-        try? await store.close()
-        throw error
-    }
+    let loaded = try await store.loadLatest(threadID: threadID)
+    #expect(loaded?.id.rawValue == "aaa")
 }
 
 @Test("HiveCheckpointWaxStore.loadLatest returns nil for empty store and unknown thread")
@@ -74,18 +68,12 @@ func hiveCheckpointWaxStoreLoadLatestReturnsNilWhenNoCheckpointExists() async th
     let url = try makeTempWaxURL()
     let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
 
-    do {
-        let loaded = try await store.loadLatest(threadID: HiveThreadID("missing-thread"))
-        #expect(loaded == nil)
-        try await store.close()
-    } catch {
-        try? await store.close()
-        throw error
-    }
+    let loaded = try await store.loadLatest(threadID: HiveThreadID("missing-thread"))
+    #expect(loaded == nil)
 }
 
-@Test("HiveCheckpointWaxStore.loadLatest can read pending checkpoint before flush")
-func hiveCheckpointWaxStoreLoadLatestSeesPendingCheckpointBeforeFlush() async throws {
+@Test("HiveCheckpointWaxStore.loadLatest reads a checkpoint after save")
+func hiveCheckpointWaxStoreLoadLatestReadsSavedCheckpoint() async throws {
     let url = try makeTempWaxURL()
     let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
     let threadID = HiveThreadID("thread-pending")
@@ -97,19 +85,13 @@ func hiveCheckpointWaxStoreLoadLatestSeesPendingCheckpointBeforeFlush() async th
         stepIndex: 1
     )
 
-    do {
-        try await store.save(checkpoint, commit: false)
-        let loaded = try await store.loadLatest(threadID: threadID)
-        #expect(loaded?.id.rawValue == "pending-checkpoint")
-        try await store.close()
-    } catch {
-        try? await store.close()
-        throw error
-    }
+    try await store.save(checkpoint)
+    let loaded = try await store.loadLatest(threadID: threadID)
+    #expect(loaded?.id.rawValue == "pending-checkpoint")
 }
 
-@Test("HiveCheckpointWaxStore.loadLatest prefers most recently written checkpoint across runs")
-func hiveCheckpointWaxStoreLoadLatestPrefersNewestWriteAcrossRuns() async throws {
+@Test("HiveCheckpointWaxStore.loadLatest prefers highest step index across runs")
+func hiveCheckpointWaxStoreLoadLatestPrefersHighestStepAcrossRuns() async throws {
     let url = try makeTempWaxURL()
     let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
     let threadID = HiveThreadID("thread-cross-run")
@@ -127,17 +109,11 @@ func hiveCheckpointWaxStoreLoadLatestPrefersNewestWriteAcrossRuns() async throws
         stepIndex: 1
     )
 
-    do {
-        try await store.save(olderRunHigherStep)
-        try await store.save(newerRunLowerStep)
+    try await store.save(olderRunHigherStep)
+    try await store.save(newerRunLowerStep)
 
-        let loaded = try await store.loadLatest(threadID: threadID)
-        #expect(loaded?.id.rawValue == "newer-run-lower-step")
-        try await store.close()
-    } catch {
-        try? await store.close()
-        throw error
-    }
+    let loaded = try await store.loadLatest(threadID: threadID)
+    #expect(loaded?.id.rawValue == "older-run-higher-step")
 }
 
 @Test("HiveCheckpointWaxStore.loadLatest persists across close and reopen")
@@ -151,24 +127,14 @@ func hiveCheckpointWaxStoreLoadLatestPersistsAcrossReopen() async throws {
         stepIndex: 3
     )
 
-    let initialStore = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
     do {
+        let initialStore = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
         try await initialStore.save(expected)
-        try await initialStore.close()
-    } catch {
-        try? await initialStore.close()
-        throw error
     }
 
     let reopenedStore = try await HiveCheckpointWaxStore<TestSchema>.open(at: url)
-    do {
-        let loaded = try await reopenedStore.loadLatest(threadID: threadID)
-        #expect(loaded?.id.rawValue == expected.id.rawValue)
-        #expect(loaded?.runID.rawValue == expected.runID.rawValue)
-        #expect(loaded?.stepIndex == expected.stepIndex)
-        try await reopenedStore.close()
-    } catch {
-        try? await reopenedStore.close()
-        throw error
-    }
+    let loaded = try await reopenedStore.loadLatest(threadID: threadID)
+    #expect(loaded?.id.rawValue == expected.id.rawValue)
+    #expect(loaded?.runID.rawValue == expected.runID.rawValue)
+    #expect(loaded?.stepIndex == expected.stepIndex)
 }
