@@ -1,3 +1,4 @@
+#if canImport(SwiftAgents)
 import Foundation
 import HiveCore
 import SwiftAgents
@@ -252,3 +253,5 @@ public struct SwiftAgentsToolRegistry: HiveToolRegistry, Sendable {
         }
     }
 }
+
+#endif

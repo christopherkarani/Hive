@@ -12,7 +12,7 @@ private actor CompletionFlag {
 
 @Test("Non-droppable events are not consumed when continuation reports dropped")
 func nonDroppableEventsAreRetriedUnderBackpressure() async throws {
-    let controller = HiveEventStreamController(capacity: 65)
+    let controller = HiveEventStreamController(capacity: 1)
     let stream = controller.makeStream()
 
     let runID = HiveRunID(UUID(uuidString: "00000000-0000-0000-0000-000000000010")!)
