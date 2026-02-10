@@ -6,6 +6,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     public init(graph: CompiledHiveGraph<Schema>, environment: HiveEnvironment<Schema>) {
         self.graph = graph
         self.environment = environment
+        self.environmentSnapshot = environment
         do {
             let registry = try HiveSchemaRegistry<Schema>()
             self.registry = registry
@@ -162,6 +163,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     private let graph: CompiledHiveGraph<Schema>
     private let environment: HiveEnvironment<Schema>
+    public nonisolated let environmentSnapshot: HiveEnvironment<Schema>
     private let registry: HiveSchemaRegistry<Schema>
     private let initialCache: HiveInitialCache<Schema>
     private let storeSupport: HiveStoreSupport<Schema>
@@ -550,10 +552,17 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
-            if state.interruption != nil {
-                // Treat new input as a cancellation of any pending interruption.
-                // This mirrors chat-style semantics where a user message can supersede an
-                // outstanding human-in-the-loop prompt (e.g. tool approval).
+
+            let inputContext = HiveInputContext(threadID: threadID, runID: state.runID, stepIndex: state.stepIndex)
+            let inputWrites = try Schema.inputWrites(input, inputContext: inputContext)
+
+            if let interruption = state.interruption {
+                // A pending interrupt can only be superseded by explicit new input writes.
+                // If there is no new input payload, fail closed and keep interruption pending.
+                guard inputWrites.isEmpty == false else {
+                    throw HiveRuntimeError.interruptPending(interruptID: interruption.id)
+                }
+
                 state.interruption = nil
                 state.frontier = []
                 state.joinSeenParents = [:]
@@ -565,8 +574,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 }
             }
 
-            let inputContext = HiveInputContext(threadID: threadID, runID: state.runID, stepIndex: state.stepIndex)
-            let inputWrites = try Schema.inputWrites(input, inputContext: inputContext)
             if !inputWrites.isEmpty {
                 var global = state.global
                 let writtenChannels = try applyInputWrites(inputWrites, to: &global)
