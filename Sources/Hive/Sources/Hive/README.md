@@ -1,7 +1,10 @@
 # Hive
 
-Umbrella module that re-exports HiveCore, HiveConduit, and HiveCheckpointWax.
+Umbrella module that re-exports HiveCore, HiveDSL, HiveConduit, and HiveCheckpointWax.
 
-Use `import Hive` when you want the core runtime plus Conduit/Wax adapters in one import.
+Use `import Hive` when you want the core runtime plus the DSL and Conduit/Wax adapters in one import.
 
-SwiftAgents integration lives in the SwiftAgents package (`HiveSwiftAgents`).
+Optional modules:
+- `HiveRAGWax` for Wax RAG primitives.
+- `HiveMacros` for schema/channel macros.
+- SwiftAgents integration lives in the SwiftAgents package (`HiveSwiftAgents`).

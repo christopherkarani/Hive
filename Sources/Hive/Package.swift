@@ -1,7 +1,6 @@
 // swift-tools-version: 6.2
 
 import PackageDescription
-
 let package = Package(
     name: "Hive",
     platforms: [
@@ -11,18 +10,27 @@ let package = Package(
     products: [
         .library(name: "Hive", targets: ["Hive"]),
         .library(name: "HiveCore", targets: ["HiveCore"]),
+        .library(name: "HiveDSL", targets: ["HiveDSL"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
+        .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
-        .package(path: "../../../Conduit"),
-        .package(path: "../../../rag/Wax"),
+        .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"),
+        .package(
+            url: "https://github.com/christopherkarani/Wax.git",
+            from: "0.1.3"
+        ),
     ],
     targets: [
         .target(
             name: "HiveCore",
             exclude: ["README.md"]
+        ),
+        .target(
+            name: "HiveDSL",
+            dependencies: ["HiveCore"]
         ),
         .target(
             name: "HiveConduit",
@@ -41,9 +49,17 @@ let package = Package(
             exclude: ["README.md"]
         ),
         .target(
+            name: "HiveSwiftAgents",
+            dependencies: [
+                "HiveCore",
+            ],
+            exclude: ["README.md"]
+        ),
+        .target(
             name: "Hive",
             dependencies: [
                 "HiveCore",
+                "HiveDSL",
                 "HiveConduit",
                 "HiveCheckpointWax",
             ],
@@ -62,12 +78,23 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "HiveDSLTests",
+            dependencies: ["HiveDSL"]
+        ),
+        .testTarget(
             name: "HiveConduitTests",
-            dependencies: ["HiveConduit"]
+            dependencies: [
+                "HiveConduit",
+                "HiveDSL",
+            ]
         ),
         .testTarget(
             name: "HiveCheckpointWaxTests",
             dependencies: ["HiveCheckpointWax"]
+        ),
+        .testTarget(
+            name: "HiveSwiftAgentsTests",
+            dependencies: ["HiveSwiftAgents"]
         ),
         .testTarget(
             name: "HiveTests",

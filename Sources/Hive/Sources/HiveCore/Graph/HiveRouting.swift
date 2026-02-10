@@ -8,7 +8,7 @@ public struct HiveNodeID: Hashable, Codable, Sendable {
 }
 
 /// Routing decision for the next frontier.
-public enum HiveNext: Sendable {
+public enum HiveNext: Sendable, Equatable {
     case useGraphEdges
     case end
     case nodes([HiveNodeID])

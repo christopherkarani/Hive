@@ -11,4 +11,8 @@ func hiveUmbrellaReexportsSubmodules() {
     _ = HiveCoreVersion.self
     _ = HiveConduitVersion.self
     _ = HiveCheckpointWaxVersion.self
+    enum EmptySchema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Self>] { [] }
+    }
+    _ = Workflow<EmptySchema>.self
 }
