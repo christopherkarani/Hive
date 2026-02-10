@@ -32,13 +32,12 @@ internal final class HiveEventStreamController: @unchecked Sendable {
     }
 
     func makeStream() -> AsyncThrowingStream<HiveEvent, Error> {
-        // Use a `.bufferingNewest(...)` continuation so the producer side never deadlocks if the consumer
-        // is slow (or absent). When the continuation buffer is full, `yield` reports `.dropped`, but the newest
-        // element is still accepted (old buffered elements are discarded), allowing us to continue draining.
+        // Use a `.bufferingOldest(...)` continuation so already-buffered events are preserved.
+        // When the continuation buffer is full, `yield` reports `.dropped` and the new element was not accepted.
         //
         // NOTE: We keep a minimum continuation buffer to avoid small `eventBufferCapacity` values causing
         // excessive drops of important events in tests and UI streams.
-        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingNewest(max(64, capacity))) { continuation in
+        AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingOldest(max(64, capacity))) { continuation in
             Task.detached(priority: .userInitiated) {
                 await self.pump(into: continuation)
             }
@@ -138,9 +137,14 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                         consumeFirst()
                         break
                     case .dropped:
-                        // For `.bufferingNewest`, `.dropped` indicates older buffered elements were evicted to
-                        // accept this event. Treat it as success and continue draining.
-                        consumeFirst()
+                        // `.bufferingOldest` reports `.dropped` when this event could not be delivered.
+                        // Droppable events are intentionally discarded; non-droppable events must stay queued
+                        // and retry until a consumer makes space.
+                        if isDroppable(event.kind) {
+                            consumeFirst()
+                        } else {
+                            await Task.yield()
+                        }
                         break
                     case .terminated:
                         return

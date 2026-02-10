@@ -1,8 +1,6 @@
 // swift-tools-version: 6.2
 
 import PackageDescription
-import CompilerPluginSupport
-
 let package = Package(
     name: "Hive",
     platforms: [
@@ -15,8 +13,7 @@ let package = Package(
         .library(name: "HiveDSL", targets: ["HiveDSL"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
-        .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
-        .library(name: "HiveMacros", targets: ["HiveMacros"]),
+        .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
@@ -25,7 +22,6 @@ let package = Package(
             url: "https://github.com/christopherkarani/Wax.git",
             from: "0.1.3"
         ),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", from: "600.0.0"),
     ],
     targets: [
         .target(
@@ -53,27 +49,11 @@ let package = Package(
             exclude: ["README.md"]
         ),
         .target(
-            name: "HiveRAGWax",
+            name: "HiveSwiftAgents",
             dependencies: [
-                "HiveDSL",
-                .product(name: "Wax", package: "Wax"),
-            ]
-        ),
-        .macro(
-            name: "HiveMacrosImpl",
-            dependencies: [
-                .product(name: "SwiftSyntax", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
-                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
-            ]
-        ),
-        .target(
-            name: "HiveMacros",
-            dependencies: [
-                "HiveMacrosImpl",
                 "HiveCore",
-            ]
+            ],
+            exclude: ["README.md"]
         ),
         .target(
             name: "Hive",
@@ -113,16 +93,8 @@ let package = Package(
             dependencies: ["HiveCheckpointWax"]
         ),
         .testTarget(
-            name: "HiveRAGWaxTests",
-            dependencies: ["HiveRAGWax"]
-        ),
-        .testTarget(
-            name: "HiveMacrosTests",
-            dependencies: [
-                "HiveMacros",
-                "HiveMacrosImpl",
-                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
-            ]
+            name: "HiveSwiftAgentsTests",
+            dependencies: ["HiveSwiftAgents"]
         ),
         .testTarget(
             name: "HiveTests",

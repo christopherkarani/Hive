@@ -7,6 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3187 | 4:11 AM | 🔵 | Hive Event Types for Runtime Observability | ~442 |
-| #3177 | 4:10 AM | 🔵 | HiveRuntime Actor-Based Execution Engine | ~466 |
+| #3191 | 4:11 AM | 🔵 | HiveCore Mental Model and Usage Patterns | ~478 |
 </claude-mem-context>
