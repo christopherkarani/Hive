@@ -147,3 +147,76 @@ func viewCancellationStopsPromptly() async throws {
         #expect(Bool(true))
     }
 }
+
+@Test("dropping to zero subscribers keeps source alive for later subscribers")
+func droppingAllSubscribersKeepsSourceAlive() async throws {
+    let (source, continuation) = makeSourceStream()
+    let views = HiveEventStreamViews(source)
+
+    actor Signal {
+        private var signaled = false
+
+        func isSignaled() -> Bool {
+            signaled
+        }
+
+        func signal() {
+            guard signaled == false else { return }
+            signaled = true
+        }
+    }
+
+    let terminated = Signal()
+    let secondSubscriberReady = Signal()
+    continuation.onTermination = { @Sendable _ in
+        Task {
+            await terminated.signal()
+        }
+    }
+
+    let firstConsumer = Task {
+        var iterator = views.model().makeAsyncIterator()
+        _ = try await iterator.next()
+    }
+
+    await Task.yield()
+    continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+    _ = try await firstConsumer.value
+
+    for _ in 0 ..< 5 {
+        await Task.yield()
+    }
+    #expect(await terminated.isSignaled() == false)
+
+    let probeIndex: UInt64 = 9_999
+    let secondConsumer = Task {
+        var indices: [UInt64] = []
+        for try await event in views.model() {
+            if event.id.eventIndex == probeIndex {
+                await secondSubscriberReady.signal()
+                continue
+            }
+            indices.append(event.id.eventIndex)
+        }
+        return indices
+    }
+
+    let readyDeadline = Date().addingTimeInterval(0.25)
+    while await secondSubscriberReady.isSignaled() == false, Date() < readyDeadline {
+        continuation.yield(makeEvent(index: probeIndex, kind: .modelToken(text: "probe")))
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(await secondSubscriberReady.isSignaled())
+
+    continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "y")))
+    continuation.finish()
+
+    let eventIndices = try await secondConsumer.value
+    #expect(eventIndices == [1])
+
+    let deadline = Date().addingTimeInterval(0.25)
+    while await terminated.isSignaled() == false, Date() < deadline {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    #expect(await terminated.isSignaled())
+}
