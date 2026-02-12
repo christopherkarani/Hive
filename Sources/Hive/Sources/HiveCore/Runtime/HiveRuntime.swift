@@ -1,20 +1,17 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 /// Deterministic runtime for executing a compiled graph.
 public actor HiveRuntime<Schema: HiveSchema>: Sendable {
-    public init(graph: CompiledHiveGraph<Schema>, environment: HiveEnvironment<Schema>) {
+    public init(graph: CompiledHiveGraph<Schema>, environment: HiveEnvironment<Schema>) throws {
         self.graph = graph
         self.environment = environment
         self.environmentSnapshot = environment
-        do {
-            let registry = try HiveSchemaRegistry<Schema>()
-            self.registry = registry
-            self.initialCache = HiveInitialCache(registry: registry)
-            self.storeSupport = HiveStoreSupport(registry: registry)
-        } catch {
-            preconditionFailure("Failed to initialize HiveRuntime: \(error)")
-        }
+        let registry = try HiveSchemaRegistry<Schema>()
+        self.registry = registry
+        self.initialCache = HiveInitialCache(registry: registry)
+        self.storeSupport = HiveStoreSupport(registry: registry)
         self.threadStates = [:]
         self.threadQueues = [:]
     }
@@ -177,7 +174,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         error: Error
     ) -> HiveRunHandle<Schema> {
         let attemptID = HiveRunAttemptID(UUID())
-        let runID = ensureThreadState(for: threadID).runID
+        let runID: HiveRunID
+        if let existing = threadStates[threadID] {
+            runID = existing.runID
+        } else {
+            runID = HiveRunID(UUID())
+        }
         let capacity = max(1, options.eventBufferCapacity)
         let streamController = HiveEventStreamController(capacity: capacity)
         let events = streamController.makeStream()
@@ -195,19 +197,19 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         )
     }
 
-    private func ensureThreadState(for threadID: HiveThreadID) -> ThreadState<Schema> {
+    private func ensureThreadState(for threadID: HiveThreadID) throws -> ThreadState<Schema> {
         if let existing = threadStates[threadID] {
             return existing
         }
 
-        let state = makeFreshThreadState(for: threadID)
+        let state = try makeFreshThreadState(for: threadID)
         threadStates[threadID] = state
         return state
     }
 
-    private func makeFreshThreadState(for _: HiveThreadID) -> ThreadState<Schema> {
+    private func makeFreshThreadState(for _: HiveThreadID) throws -> ThreadState<Schema> {
         let runID = HiveRunID(UUID())
-        let global = HiveGlobalStore(registry: registry, initialCache: initialCache)
+        let global = try HiveGlobalStore(registry: registry, initialCache: initialCache)
         let joinSeen = Dictionary(uniqueKeysWithValues: graph.joinEdges.map { ($0.id, Set<HiveNodeID>()) })
         return ThreadState(
             runID: runID,
@@ -233,14 +235,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         guard let store = environment.checkpointStore else {
-            let fresh = makeFreshThreadState(for: threadID)
+            let fresh = try makeFreshThreadState(for: threadID)
             threadStates[threadID] = fresh
             return fresh
         }
 
         let checkpoint = try await store.loadLatest(threadID: threadID)
         guard let checkpoint else {
-            let fresh = makeFreshThreadState(for: threadID)
+            let fresh = try makeFreshThreadState(for: threadID)
             threadStates[threadID] = fresh
             return fresh
         }
@@ -625,7 +627,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 if let checkpoint = stepOutcome.checkpointToSave {
                     // Interrupt checkpointing is atomic: no publish and no commit-scoped events unless save succeeds.
                     guard let store = environment.checkpointStore else {
-                        preconditionFailure("Checkpoint was requested without a configured store.")
+                        throw HiveRuntimeError.checkpointStoreMissing
                     }
                     try await store.save(checkpoint)
                     nextState.latestCheckpointID = checkpoint.id
@@ -680,7 +682,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     // Interrupt is terminal for this attempt (even if next frontier is empty).
                     let checkpointID = stepOutcome.checkpointToSave?.id ?? state.latestCheckpointID
                     guard let checkpointID else {
-                        preconditionFailure("Interrupted outcome requires a checkpoint ID.")
+                        throw HiveRuntimeError.internalInvariantViolation(
+                            "Interrupted outcome requires a checkpoint ID."
+                        )
                     }
                     emitter.emit(kind: .runInterrupted(interruptID: interrupt.id), stepIndex: nil, taskOrdinal: nil)
                     streamController.finish()
@@ -793,7 +797,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
                 if let checkpoint = stepOutcome.checkpointToSave {
                     guard let store = environment.checkpointStore else {
-                        preconditionFailure("Checkpoint was requested without a configured store.")
+                        throw HiveRuntimeError.checkpointStoreMissing
                     }
                     try await store.save(checkpoint)
                     nextState.latestCheckpointID = checkpoint.id
@@ -847,7 +851,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 if let interrupt = stepOutcome.selectedInterrupt {
                     let checkpointID = stepOutcome.checkpointToSave?.id ?? state.latestCheckpointID
                     guard let checkpointID else {
-                        preconditionFailure("Interrupted outcome requires a checkpoint ID.")
+                        throw HiveRuntimeError.internalInvariantViolation(
+                            "Interrupted outcome requires a checkpoint ID."
+                        )
                     }
                     emitter.emit(kind: .runInterrupted(interruptID: interrupt.id), stepIndex: nil, taskOrdinal: nil)
                     streamController.finish()
@@ -942,7 +948,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             if let checkpointToSave {
                 guard let store = environment.checkpointStore else {
-                    preconditionFailure("Checkpoint was requested without a configured store.")
+                    throw HiveRuntimeError.checkpointStoreMissing
                 }
                 try await store.save(checkpointToSave)
                 nextState.latestCheckpointID = checkpointToSave.id
@@ -1146,13 +1152,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         func validateValueType(_ value: any Sendable, spec: AnyHiveChannelSpec<Schema>) throws {
             let expectedValueTypeID = spec.valueTypeID
             let actualValueTypeID = String(reflecting: type(of: value))
-#if DEBUG
-            guard expectedValueTypeID == actualValueTypeID else {
-                preconditionFailure(
-                    "Channel type mismatch for \(spec.id.rawValue): expected \(expectedValueTypeID), got \(actualValueTypeID)"
-                )
-            }
-#else
             guard expectedValueTypeID == actualValueTypeID else {
                 throw HiveRuntimeError.channelTypeMismatch(
                     channelID: spec.id,
@@ -1160,7 +1159,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     actualValueTypeID: actualValueTypeID
                 )
             }
-#endif
         }
 
         var writesByChannel: [HiveChannelID: [AnyHiveWrite<Schema>]] = [:]
@@ -1464,11 +1462,15 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             throw firstError
         }
 
-        let outputs = results.map { result -> HiveNodeOutput<Schema> in
+        var outputs: [HiveNodeOutput<Schema>] = []
+        outputs.reserveCapacity(results.count)
+        for result in results {
             guard let output = result.output else {
-                preconditionFailure("Task result missing output without error.")
+                throw HiveRuntimeError.internalInvariantViolation(
+                    "Task result missing output without error."
+                )
             }
-            return output
+            outputs.append(output)
         }
         let commitResult = try commitStep(
             state: state,
@@ -2208,7 +2210,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             throw HiveRuntimeError.taskOrdinalOutOfRange(ordinal: ordinal)
         }
         guard localFingerprint.count == 32 else {
-            preconditionFailure("Task local fingerprint must be 32 bytes.")
+            throw HiveRuntimeError.invalidTaskLocalFingerprintLength(
+                expected: 32,
+                actual: localFingerprint.count
+            )
         }
 
         var bytes = Data()
@@ -2397,21 +2402,15 @@ private struct HiveDroppedEventCounts: Sendable {
     }
 }
 
-private final class HiveDroppedEventCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var counts = HiveDroppedEventCounts()
+private final class HiveDroppedEventCounter: Sendable {
+    private let counts = Mutex(HiveDroppedEventCounts())
 
     func record(_ enqueueResult: HiveEventEnqueueResult) {
-        lock.lock()
-        counts.record(enqueueResult)
-        lock.unlock()
+        counts.withLock { $0.record(enqueueResult) }
     }
 
     func snapshot() -> HiveDroppedEventCounts {
-        lock.lock()
-        let snapshot = counts
-        lock.unlock()
-        return snapshot
+        counts.withLock { $0 }
     }
 }
 
@@ -2421,63 +2420,63 @@ private struct BufferedStreamEvent: Sendable {
     let taskOrdinal: Int
 }
 
-private final class HivePerAttemptStreamBuffer: @unchecked Sendable {
+private final class HivePerAttemptStreamBuffer: Sendable {
+    private struct State {
+        var events: [BufferedStreamEvent]
+        var dropped: HiveDroppedEventCounts
+        var overflowError: Error?
+    }
+
     private let capacity: Int
     private let stepIndex: Int
     private let taskOrdinal: Int
-    private let lock = NSLock()
-
-    private var events: [BufferedStreamEvent] = []
-    private var dropped = HiveDroppedEventCounts()
-    private var overflowError: Error?
+    private let state: Mutex<State>
 
     init(capacity: Int, stepIndex: Int, taskOrdinal: Int) {
         self.capacity = max(1, capacity)
         self.stepIndex = stepIndex
         self.taskOrdinal = taskOrdinal
-        self.events.reserveCapacity(min(8, self.capacity))
+        var initialEvents: [BufferedStreamEvent] = []
+        initialEvents.reserveCapacity(min(8, self.capacity))
+        self.state = Mutex(State(events: initialEvents, dropped: HiveDroppedEventCounts(), overflowError: nil))
     }
 
     func record(kind: HiveEventKind, metadata: [String: String]) {
-        lock.lock()
-        defer { lock.unlock() }
+        state.withLock { state in
+            guard state.overflowError == nil else { return }
 
-        guard overflowError == nil else { return }
-
-        if events.count < capacity {
-            events.append(BufferedStreamEvent(kind: kind, metadata: metadata, taskOrdinal: taskOrdinal))
-            return
-        }
-
-        switch kind {
-        case .modelToken(let text):
-            if let last = events.last, case let .modelToken(existing) = last.kind {
-                events[events.count - 1] = BufferedStreamEvent(
-                    kind: .modelToken(text: existing + text),
-                    metadata: last.metadata,
-                    taskOrdinal: taskOrdinal
-                )
-            } else {
-                dropped.droppedModelTokenEvents += 1
+            if state.events.count < capacity {
+                state.events.append(BufferedStreamEvent(kind: kind, metadata: metadata, taskOrdinal: taskOrdinal))
+                return
             }
-        case .customDebug:
-            dropped.droppedDebugEvents += 1
-        default:
-            overflowError = HiveRuntimeError.modelStreamInvalid(
-                "Non-droppable stream event buffer overflow (stepIndex=\(stepIndex), taskOrdinal=\(taskOrdinal), perTaskCapacity=\(capacity))"
-            )
+
+            switch kind {
+            case .modelToken(let text):
+                if let last = state.events.last, case let .modelToken(existing) = last.kind {
+                    state.events[state.events.count - 1] = BufferedStreamEvent(
+                        kind: .modelToken(text: existing + text),
+                        metadata: last.metadata,
+                        taskOrdinal: taskOrdinal
+                    )
+                } else {
+                    state.dropped.droppedModelTokenEvents += 1
+                }
+            case .customDebug:
+                state.dropped.droppedDebugEvents += 1
+            default:
+                state.overflowError = HiveRuntimeError.modelStreamInvalid(
+                    "Non-droppable stream event buffer overflow (stepIndex=\(stepIndex), taskOrdinal=\(taskOrdinal), perTaskCapacity=\(capacity))"
+                )
+            }
         }
     }
 
     func snapshot() -> (events: [BufferedStreamEvent], dropped: HiveDroppedEventCounts, overflowError: Error?) {
-        lock.lock()
-        let snapshot = (events: events, dropped: dropped, overflowError: overflowError)
-        lock.unlock()
-        return snapshot
+        state.withLock { (events: $0.events, dropped: $0.dropped, overflowError: $0.overflowError) }
     }
 }
 
-private struct TaskExecutionResult<Schema: HiveSchema>: @unchecked Sendable {
+private struct TaskExecutionResult<Schema: HiveSchema>: Sendable {
     let output: HiveNodeOutput<Schema>?
     let error: Error?
     let streamEvents: [BufferedStreamEvent]?
@@ -2519,12 +2518,15 @@ private struct SeedKey: Hashable, Sendable {
     let fingerprint: Data
 }
 
-private final class HiveEventEmitter: @unchecked Sendable {
+private final class HiveEventEmitter: Sendable {
+    private struct State {
+        var eventIndex: UInt64 = 0
+    }
+
     private let runID: HiveRunID
     private let attemptID: HiveRunAttemptID
     private let streamController: HiveEventStreamController
-    private var eventIndex: UInt64 = 0
-    private let lock = NSLock()
+    private let state = Mutex(State())
 
     init(
         runID: HiveRunID,
@@ -2544,22 +2546,22 @@ private final class HiveEventEmitter: @unchecked Sendable {
         metadata: [String: String] = [:],
         treatAsNonDroppable: Bool = false
     ) -> HiveEventEnqueueResult {
-        lock.lock()
-        let nextIndex = eventIndex
-        let result = streamController.enqueue(
-            eventIndex: nextIndex,
-            runID: runID,
-            attemptID: attemptID,
-            kind: kind,
-            stepIndex: stepIndex,
-            taskOrdinal: taskOrdinal,
-            metadata: metadata,
-            treatAsNonDroppable: treatAsNonDroppable
-        )
-        if case .enqueued = result {
-            eventIndex += 1
+        state.withLock { state in
+            let nextIndex = state.eventIndex
+            let result = streamController.enqueue(
+                eventIndex: nextIndex,
+                runID: runID,
+                attemptID: attemptID,
+                kind: kind,
+                stepIndex: stepIndex,
+                taskOrdinal: taskOrdinal,
+                metadata: metadata,
+                treatAsNonDroppable: treatAsNonDroppable
+            )
+            if case .enqueued = result {
+                state.eventIndex += 1
+            }
+            return result
         }
-        lock.unlock()
-        return result
     }
 }

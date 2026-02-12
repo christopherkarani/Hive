@@ -37,6 +37,66 @@ private func collect<T>(_ stream: AsyncThrowingStream<T, Error>) async throws ->
     return items
 }
 
+private actor AsyncSignal {
+    private var isSignaled = false
+    private var continuations: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    func signal() {
+        guard isSignaled == false else { return }
+        isSignaled = true
+        let pending = continuations.values
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+
+    func wait() async {
+        if isSignaled {
+            return
+        }
+        let waiterID = UUID()
+        await withTaskCancellationHandler(
+            operation: {
+                await withCheckedContinuation { continuation in
+                    if isSignaled {
+                        continuation.resume()
+                        return
+                    }
+                    continuations[waiterID] = continuation
+                }
+            },
+            onCancel: {
+                Task {
+                    await self.cancelWaiter(waiterID)
+                }
+            }
+        )
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let continuation = continuations.removeValue(forKey: id) else { return }
+        continuation.resume()
+    }
+
+    func value() -> Bool {
+        isSignaled
+    }
+}
+
+private func waitForSignal(
+    _ signal: AsyncSignal,
+    maxYields: Int
+) async -> Bool {
+    for _ in 0..<max(1, maxYields) {
+        if await signal.value() {
+            return true
+        }
+        await Task.yield()
+    }
+    return await signal.value()
+}
+
 @Test("steps() filters and preserves order")
 func stepsViewFiltersAndPreservesOrder() async throws {
     let (source, continuation) = makeSourceStream()
@@ -146,4 +206,65 @@ func viewCancellationStopsPromptly() async throws {
     } catch is CancellationError {
         #expect(Bool(true))
     }
+}
+
+@Test("dropping to zero subscribers keeps source alive for later subscribers")
+func droppingAllSubscribersKeepsSourceAlive() async throws {
+    let (source, continuation) = makeSourceStream()
+    let views = HiveEventStreamViews(source)
+
+    let terminated = AsyncSignal()
+    let secondSubscriberReady = AsyncSignal()
+    continuation.onTermination = { @Sendable _ in
+        Task {
+            await terminated.signal()
+        }
+    }
+
+    let firstConsumer = Task {
+        var iterator = views.model().makeAsyncIterator()
+        _ = try await iterator.next()
+    }
+
+    await Task.yield()
+    continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+    _ = try await firstConsumer.value
+
+    for _ in 0 ..< 5 {
+        await Task.yield()
+    }
+    #expect(await terminated.value() == false)
+
+    let probeIndex: UInt64 = 9_999
+    let secondConsumer = Task {
+        var indices: [UInt64] = []
+        for try await event in views.model() {
+            if event.id.eventIndex == probeIndex {
+                await secondSubscriberReady.signal()
+                continue
+            }
+            indices.append(event.id.eventIndex)
+        }
+        return indices
+    }
+
+    let probeEmitter = Task {
+        while Task.isCancelled == false {
+            continuation.yield(makeEvent(index: probeIndex, kind: .modelToken(text: "probe")))
+            await Task.yield()
+        }
+    }
+    let secondSubscriberObservedProbe = await waitForSignal(secondSubscriberReady, maxYields: 50_000)
+    probeEmitter.cancel()
+    _ = await probeEmitter.result
+    #expect(secondSubscriberObservedProbe)
+
+    continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "y")))
+    continuation.finish()
+
+    let eventIndices = try await secondConsumer.value
+    #expect(eventIndices == [1])
+
+    let terminatedAfterFinish = await waitForSignal(terminated, maxYields: 50_000)
+    #expect(terminatedAfterFinish)
 }

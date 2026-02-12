@@ -9,6 +9,8 @@ internal enum HiveEventEnqueueResult: Sendable {
 }
 
 internal final class HiveEventStreamController: @unchecked Sendable {
+    // Uses NSCondition for synchronous producer backpressure and consumer wakeups.
+    // NSCondition is not statically Sendable, so this class requires manual synchronization.
     private enum FinishState {
         case finished
         case failed(Error)
@@ -20,15 +22,91 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         case failed(Error)
     }
 
+    private struct EventRingQueue {
+        private let capacity: Int
+        private var storage: [HiveEvent?]
+        private var headIndex: Int = 0
+        private(set) var count: Int = 0
+
+        init(capacity: Int) {
+            self.capacity = capacity
+            self.storage = Array(repeating: nil, count: capacity)
+        }
+
+        var isEmpty: Bool {
+            count == 0
+        }
+
+        var first: HiveEvent? {
+            guard count > 0 else { return nil }
+            return storage[headIndex]
+        }
+
+        var last: HiveEvent? {
+            guard count > 0 else { return nil }
+            return storage[physicalIndex(offset: count - 1)]
+        }
+
+        mutating func append(_ event: HiveEvent) -> Bool {
+            guard count < capacity else { return false }
+            storage[physicalIndex(offset: count)] = event
+            count += 1
+            return true
+        }
+
+        mutating func replaceLast(with event: HiveEvent) {
+            guard count > 0 else { return }
+            storage[physicalIndex(offset: count - 1)] = event
+        }
+
+        mutating func removeFirst() {
+            guard count > 0 else { return }
+            storage[headIndex] = nil
+            count -= 1
+            if count == 0 {
+                headIndex = 0
+                return
+            }
+            headIndex = nextIndex(after: headIndex)
+        }
+
+        mutating func removeAll(keepingCapacity: Bool) {
+            if keepingCapacity {
+                if count > 0 {
+                    var index = headIndex
+                    for _ in 0..<count {
+                        storage[index] = nil
+                        index = nextIndex(after: index)
+                    }
+                }
+            } else {
+                storage = Array(repeating: nil, count: capacity)
+            }
+            headIndex = 0
+            count = 0
+        }
+
+        private func physicalIndex(offset: Int) -> Int {
+            let raw = headIndex + offset
+            return raw < capacity ? raw : raw - capacity
+        }
+
+        private func nextIndex(after index: Int) -> Int {
+            let next = index + 1
+            return next == capacity ? 0 : next
+        }
+    }
+
     private let capacity: Int
     private let condition = NSCondition()
 
-    private var queue: [HiveEvent] = []
+    private var queue: EventRingQueue
     private var finishState: FinishState?
 
     init(capacity: Int) {
-        self.capacity = max(1, capacity)
-        self.queue.reserveCapacity(min(64, self.capacity))
+        let normalizedCapacity = max(1, capacity)
+        self.capacity = normalizedCapacity
+        self.queue = EventRingQueue(capacity: normalizedCapacity)
     }
 
     func makeStream() -> AsyncThrowingStream<HiveEvent, Error> {
@@ -38,6 +116,9 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         // NOTE: We keep a minimum continuation buffer to avoid small `eventBufferCapacity` values causing
         // excessive drops of important events in tests and UI streams.
         AsyncThrowingStream(HiveEvent.self, bufferingPolicy: .bufferingOldest(max(64, capacity))) { continuation in
+            continuation.onTermination = { [weak self] _ in
+                self?.terminateStreamAndUnblockProducers()
+            }
             Task.detached(priority: .userInitiated) {
                 await self.pump(into: continuation)
             }
@@ -100,7 +181,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                 stepIndex: stepIndex,
                 taskOrdinal: taskOrdinal
             )
-            queue.append(HiveEvent(id: id, kind: kind, metadata: metadata))
+            _ = queue.append(HiveEvent(id: id, kind: kind, metadata: metadata))
             condition.signal()
             return .enqueued
         }
@@ -120,7 +201,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
             stepIndex: stepIndex,
             taskOrdinal: taskOrdinal
         )
-        queue.append(HiveEvent(id: id, kind: kind, metadata: metadata))
+        _ = queue.append(HiveEvent(id: id, kind: kind, metadata: metadata))
         condition.signal()
         return .enqueued
     }
@@ -143,10 +224,11 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                         if isDroppable(event.kind) {
                             consumeFirst()
                         } else {
-                            await Task.yield()
+                            try? await Task.sleep(nanoseconds: 250_000)
                         }
                         break
                     case .terminated:
+                        terminateStreamAndUnblockProducers()
                         return
                     @unknown default:
                         consumeFirst()
@@ -210,7 +292,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
             kind: .modelToken(text: existing + text),
             metadata: last.metadata
         )
-        queue[queue.count - 1] = coalesced
+        queue.replaceLast(with: coalesced)
         return true
     }
 
@@ -226,5 +308,17 @@ internal final class HiveEventStreamController: @unchecked Sendable {
     private func isDroppableDebug(_ kind: HiveEventKind) -> Bool {
         if case .customDebug = kind { return true }
         return false
+    }
+
+    private func terminateStreamAndUnblockProducers() {
+        condition.lock()
+        if finishState == nil {
+            finishState = .finished
+        }
+        if !queue.isEmpty {
+            queue.removeAll(keepingCapacity: true)
+        }
+        condition.broadcast()
+        condition.unlock()
     }
 }

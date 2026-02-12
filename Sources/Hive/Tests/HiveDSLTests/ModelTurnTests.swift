@@ -83,7 +83,7 @@ func modelTurnWritesOutput() async throws {
         model: AnyHiveModelClient(stub)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let handle = await runtime.run(threadID: HiveThreadID("mt-1"), input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
 
@@ -117,7 +117,7 @@ func modelTurnThrowsWhenModelMissing() async throws {
         logger: NoopLogger()
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let handle = await runtime.run(threadID: HiveThreadID("mt-missing"), input: (), options: HiveRunOptions())
 
     do {
@@ -163,7 +163,7 @@ func modelTurnIncludesToolsFromEnvironment() async throws {
         tools: AnyHiveToolRegistry(StubToolRegistry(tools: [tool]))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let handle = await runtime.run(threadID: HiveThreadID("mt-tools"), input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
 

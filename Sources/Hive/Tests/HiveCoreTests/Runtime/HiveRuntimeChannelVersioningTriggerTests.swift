@@ -156,7 +156,7 @@ func testChannelVersions_IncrementOncePerCommittedStepPerWrittenChannel() async 
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -217,7 +217,7 @@ func testVersionsSeen_SnapshotsAtStepStart_PreCommit() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -275,7 +275,7 @@ func testRunWhenAnyOf_FiltersScheduling_WhenNoChannelsChanged() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("runwhen-anyof"),
@@ -334,7 +334,7 @@ func testInputWrites_BumpChannelVersions_CanRetriggerAcrossRuns() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
     let threadID = HiveThreadID("input-writes-retrigger")
 
     let first = await runtime.run(threadID: threadID, input: 1, options: HiveRunOptions())
@@ -412,7 +412,7 @@ func testRunWhenAllOf_RequiresAllChannelsChanged() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("runwhen-allof"),
@@ -467,7 +467,7 @@ func testJoinSeeds_BypassTriggerFiltering() async throws {
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("join-bypass"),
@@ -560,7 +560,7 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     // Baseline: triggers should quiesce before maxSteps.
     counter.count = 0
     let baselineGraph = try makeGraph()
-    let baselineRuntime = HiveRuntime(graph: baselineGraph, environment: makeEnvironment(context: ()))
+    let baselineRuntime = try HiveRuntime(graph: baselineGraph, environment: makeEnvironment(context: ()))
     let baselineHandle = await baselineRuntime.run(
         threadID: HiveThreadID("parity-baseline"),
         input: (),
@@ -577,7 +577,7 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     let checkpointGraph = try makeGraph()
     let store = TestCheckpointStore<Schema>()
 
-    let checkpointedRuntime = HiveRuntime(
+    let checkpointedRuntime = try HiveRuntime(
         graph: checkpointGraph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -591,7 +591,7 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     let firstEvents = await firstEventsTask.value
     guard case .outOfSteps = firstOutcome else { #expect(Bool(false)); return }
 
-    let resumedRuntime = HiveRuntime(
+    let resumedRuntime = try HiveRuntime(
         graph: checkpointGraph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )

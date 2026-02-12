@@ -70,7 +70,7 @@ func graphDescription_GoldenJSON() throws {
 
     #expect(json == """
     {
-      "graphVersion" : "71ebae03ee881edc21822ee03f2e4ac8748deca12da56e49dd0c2e677b4738fe",
+      "graphVersion" : "345869ef0a16d32c9126ed343d309063e279988b4a44e7cc6e71921e97020fe1",
       "joinEdges" : [
         {
           "id" : "join:B+C:J",
@@ -112,7 +112,7 @@ func graphDescription_GoldenJSON() throws {
           "rawValue" : "A"
         }
       ],
-      "schemaVersion" : "df0d11c5c98dd7c35dd77b5ab7f29fb64fb87af6c327944e20bc708d322a996b",
+      "schemaVersion" : "6f7c4aa33eca01550f89bf3f30d5262681907db90db38f99e974c1daed2ec2b9",
       "start" : [
         {
           "rawValue" : "A"

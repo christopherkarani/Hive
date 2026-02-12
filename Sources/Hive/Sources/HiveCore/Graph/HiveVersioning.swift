@@ -4,7 +4,7 @@ import Foundation
 enum HiveVersioning {
     static func schemaVersion<Schema: HiveSchema>(registry: HiveSchemaRegistry<Schema>) -> String {
         var bytes = Data()
-        bytes.append(contentsOf: [0x48, 0x53, 0x56, 0x31]) // HSV1
+        bytes.append(contentsOf: [0x48, 0x53, 0x56, 0x32]) // HSV2
         bytes.append(0x43)
         appendUInt32BE(UInt32(registry.sortedChannelSpecs.count), to: &bytes)
 
@@ -15,6 +15,9 @@ enum HiveVersioning {
             bytes.append(scopeByte(spec.scope))
             bytes.append(persistenceByte(spec.persistence))
             bytes.append(updatePolicyByte(spec.updatePolicy))
+            let valueTypeData = Data(spec.valueTypeID.utf8)
+            appendUInt32BE(UInt32(valueTypeData.count), to: &bytes)
+            bytes.append(valueTypeData)
             let codecID = spec.codecID ?? ""
             let codecData = Data(codecID.utf8)
             appendUInt32BE(UInt32(codecData.count), to: &bytes)
@@ -36,9 +39,9 @@ enum HiveVersioning {
 
         var bytes = Data()
         if usesTriggers {
-            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x32]) // HGV2
+            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x34]) // HGV4
         } else {
-            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x31]) // HGV1
+            bytes.append(contentsOf: [0x48, 0x47, 0x56, 0x33]) // HGV3
         }
 
         appendGraphCore(
@@ -78,6 +81,9 @@ enum HiveVersioning {
         appendUInt32BE(UInt32(sortedNodes.count), to: &bytes)
         for id in sortedNodes {
             appendID(id.rawValue, to: &bytes)
+            if let node = nodesByID[id] {
+                appendRetryPolicy(node.retryPolicy, to: &bytes)
+            }
         }
 
         bytes.append(0x52) // R
@@ -160,6 +166,34 @@ enum HiveVersioning {
     private static func appendUInt32BE(_ value: UInt32, to data: inout Data) {
         var bigEndian = value.bigEndian
         withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendUInt64BE(_ value: UInt64, to data: inout Data) {
+        var bigEndian = value.bigEndian
+        withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendInt64BE(_ value: Int64, to data: inout Data) {
+        var bigEndian = value.bigEndian
+        withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
+    }
+
+    private static func appendRetryPolicy(_ policy: HiveRetryPolicy, to bytes: inout Data) {
+        switch policy {
+        case .none:
+            bytes.append(0)
+        case .exponentialBackoff(
+            let initialNanoseconds,
+            let factor,
+            let maxAttempts,
+            let maxNanoseconds
+        ):
+            bytes.append(1)
+            appendUInt64BE(initialNanoseconds, to: &bytes)
+            appendUInt64BE(factor.bitPattern, to: &bytes)
+            appendInt64BE(Int64(maxAttempts), to: &bytes)
+            appendUInt64BE(maxNanoseconds, to: &bytes)
+        }
     }
 
     private static func scopeByte(_ scope: HiveChannelScope) -> UInt8 {

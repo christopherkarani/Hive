@@ -42,38 +42,27 @@ public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Send
                     let stream = provider.streamWithMetadata(messages: messages, model: modelID, config: config)
 
                     var accumulatedText = ""
-                    var pendingFinal: HiveChatResponse?
 
                     for try await chunk in stream {
-                        if pendingFinal != nil {
-                            throw HiveRuntimeError.modelStreamInvalid("Received chunk after final completion.")
-                        }
-
                         if !chunk.text.isEmpty {
                             accumulatedText.append(chunk.text)
                             continuation.yield(.token(chunk.text))
                         }
 
                         if chunk.isComplete {
-                            if pendingFinal != nil {
-                                throw HiveRuntimeError.modelStreamInvalid("Received multiple final completion chunks.")
-                            }
                             let toolCalls = chunk.completedToolCalls ?? []
                             let response = Self.makeResponse(
                                 messageID: messageID,
                                 text: accumulatedText,
                                 toolCalls: toolCalls
                             )
-                            pendingFinal = response
+                            continuation.yield(.final(response))
+                            continuation.finish()
+                            return
                         }
                     }
 
-                    guard let final = pendingFinal else {
-                        throw HiveRuntimeError.modelStreamInvalid("Missing final completion chunk.")
-                    }
-
-                    continuation.yield(.final(final))
-                    continuation.finish()
+                    throw HiveRuntimeError.modelStreamInvalid("Missing final completion chunk.")
                 } catch {
                     continuation.finish(throwing: error)
                 }

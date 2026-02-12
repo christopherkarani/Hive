@@ -141,7 +141,7 @@ func modelTurnDefaultModeIsSingleShotComplete() async throws {
         model: AnyHiveModelClient(ScriptedModelClient(script: script)),
         tools: AnyHiveToolRegistry(toolRegistry)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("mt-default")
     let handle = await runtime.run(threadID: threadID, input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
@@ -221,7 +221,7 @@ func modelTurnAgentLoopExecutesToolsAndWritesFinalAnswer() async throws {
         model: AnyHiveModelClient(ScriptedModelClient(script: script)),
         tools: AnyHiveToolRegistry(toolRegistry)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("mt-loop")
     let handle = await runtime.run(threadID: threadID, input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
@@ -306,7 +306,7 @@ func modelTurnWritesMessagesInDeterministicOrder() async throws {
         model: AnyHiveModelClient(ScriptedModelClient(script: script)),
         tools: AnyHiveToolRegistry(toolRegistry)
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let threadID = HiveThreadID("mt-messages")
     let handle = await runtime.run(threadID: threadID, input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
@@ -359,7 +359,7 @@ func modelTurnAgentLoopThrowsWhenToolRegistryMissing() async throws {
         model: AnyHiveModelClient(ScriptedModelClient(script: script))
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
     let handle = await runtime.run(threadID: HiveThreadID("mt-missing-tools"), input: (), options: HiveRunOptions())
 
     do {

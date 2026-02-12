@@ -93,7 +93,7 @@ func testRouterFreshRead_SeesOwnWriteNotOthers() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t1"),
@@ -151,7 +151,7 @@ func testEventSequence_DeterministicEventsOrder() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("evt-order"),
@@ -209,7 +209,7 @@ func testFailedStep_NoStepFinishedOrWriteApplied() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("failed-step"),
@@ -294,7 +294,7 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
         }
 
         let graph = try builder.compile()
-        let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+        let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
         let handle = await runtime.run(
             threadID: HiveThreadID(debugPayloads ? "debug-on" : "debug-off"),
@@ -357,7 +357,7 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("det-stream"),
@@ -433,7 +433,7 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("backpressure"),
@@ -497,7 +497,7 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("retry-stream"),
@@ -563,7 +563,7 @@ func testRouterFreshRead_ErrorAbortsStep() async throws {
     builder.addRouter(from: HiveNodeID("A")) { _ in .nodes([HiveNodeID("B")]) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t2"),
@@ -611,7 +611,7 @@ func testRouterReturnUseGraphEdges_FallsBackToStaticEdges() async throws {
     builder.addRouter(from: HiveNodeID("A")) { _ in .useGraphEdges }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t3"),
@@ -664,7 +664,7 @@ func testGlobalWriteOrdering_DeterministicUnderRandomCompletion() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t4"),
@@ -706,7 +706,7 @@ func testDedupe_GraphSeedsOnly() async throws {
     builder.addNode(HiveNodeID("C")) { _ in HiveNodeOutput(next: .end) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t5"),
@@ -743,7 +743,7 @@ func testFrontierOrdering_GraphBeforeSpawn() async throws {
     builder.addNode(HiveNodeID("C")) { _ in HiveNodeOutput(next: .end) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t6"),
@@ -782,7 +782,7 @@ func testJoinBarrier_IncludesSpawnParents() async throws {
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t7"),
@@ -820,7 +820,7 @@ func testJoinBarrier_TargetRunsEarly_DoesNotReset() async throws {
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t8"),
@@ -858,7 +858,7 @@ func testJoinBarrier_ConsumeOnlyWhenAvailable() async throws {
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t9"),
@@ -909,7 +909,7 @@ func testUnknownChannelWrite_FailsNoCommit() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("t10"),

@@ -128,7 +128,7 @@ func testCheckpoint_PersistsFrontierOrderAndProvenance() async throws {
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("C"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -164,7 +164,7 @@ func testCheckpoint_StepIndexIsNextStep() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -194,7 +194,7 @@ func testCheckpointID_DerivedFromRunIDAndStepIndex() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -258,7 +258,7 @@ func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
 
     let graph = try builder.compile()
 
-    let baselineRuntime = HiveRuntime(
+    let baselineRuntime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: ())
     )
@@ -280,7 +280,7 @@ func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
     #expect(baselineValue == 6)
 
     let checkpointStore = TestCheckpointStore<Schema>()
-    let checkpointedRuntime = HiveRuntime(
+    let checkpointedRuntime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(checkpointStore))
     )
@@ -299,7 +299,7 @@ func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
     let checkpoints = await checkpointStore.all()
     #expect(!checkpoints.isEmpty)
 
-    let resumedRuntime = HiveRuntime(
+    let resumedRuntime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(checkpointStore))
     )
@@ -322,7 +322,7 @@ func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
 }
 
 @Test("Checkpoint decode failure fails before step 0")
-func testCheckpointDecodeFailure_FailsBeforeStep0() async {
+func testCheckpointDecodeFailure_FailsBeforeStep0() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
             let key = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
@@ -360,7 +360,7 @@ func testCheckpointDecodeFailure_FailsBeforeStep0() async {
 
     await store.setOverride(badCheckpoint)
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -398,7 +398,7 @@ func testCheckpointDecodeFailure_FailsBeforeStep0() async {
 }
 
 @Test("Checkpoint corrupt join barrier keys mismatch fails before step 0")
-func testCheckpointCorrupt_JoinBarrierKeysMismatch_FailsBeforeStep0() async {
+func testCheckpointCorrupt_JoinBarrierKeysMismatch_FailsBeforeStep0() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
@@ -428,7 +428,7 @@ func testCheckpointCorrupt_JoinBarrierKeysMismatch_FailsBeforeStep0() async {
 
     await store.setOverride(corrupt)
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -466,7 +466,7 @@ func testCheckpointCorrupt_JoinBarrierKeysMismatch_FailsBeforeStep0() async {
 }
 
 @Test("Checkpoint save failure aborts commit")
-func testCheckpointSaveFailure_AbortsCommit() async {
+func testCheckpointSaveFailure_AbortsCommit() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
             let key = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
@@ -495,7 +495,7 @@ func testCheckpointSaveFailure_AbortsCommit() async {
     let graph = try? builder.compile()
     guard let graph else { #expect(Bool(false)); return }
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -539,7 +539,7 @@ func testCheckpointSaveFailure_AbortsCommit() async {
 }
 
 @Test("Checkpoint encode failure aborts commit deterministically")
-func testCheckpointEncodeFailure_AbortsCommitDeterministically() async {
+func testCheckpointEncodeFailure_AbortsCommitDeterministically() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
             let aKey = HiveChannelKey<Schema, Int>(HiveChannelID("a"))
@@ -574,7 +574,7 @@ func testCheckpointEncodeFailure_AbortsCommitDeterministically() async {
     let graph = try? builder.compile()
     guard let graph else { #expect(Bool(false)); return }
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -610,7 +610,7 @@ func testCheckpointEncodeFailure_AbortsCommitDeterministically() async {
 }
 
 @Test("Checkpoint load throws fails before step 0")
-func testCheckpointLoadThrows_FailsBeforeStep0() async {
+func testCheckpointLoadThrows_FailsBeforeStep0() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
@@ -623,7 +623,7 @@ func testCheckpointLoadThrows_FailsBeforeStep0() async {
     let graph = try? builder.compile()
     guard let graph else { #expect(Bool(false)); return }
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -656,7 +656,7 @@ func testCheckpointLoadThrows_FailsBeforeStep0() async {
 }
 
 @Test("Resume version mismatch fails before step 0")
-func testResume_VersionMismatchFailsBeforeStep0() async {
+func testResume_VersionMismatchFailsBeforeStep0() async throws {
     enum Schema: HiveSchema {
         typealias InterruptPayload = String
         typealias ResumePayload = String
@@ -691,7 +691,7 @@ func testResume_VersionMismatchFailsBeforeStep0() async {
 
     await store.setOverride(mismatched)
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
