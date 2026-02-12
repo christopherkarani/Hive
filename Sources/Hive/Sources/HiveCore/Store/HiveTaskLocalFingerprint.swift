@@ -54,11 +54,11 @@ enum HiveTaskLocalFingerprint {
 
         var bytes = Data()
         bytes.append(contentsOf: [0x48, 0x4C, 0x46, 0x31])
-        appendUInt32BE(UInt32(entries.count), to: &bytes)
+        appendUInt32BE(try lengthAsUInt32(entries.count), to: &bytes)
         for entry in entries {
-            appendUInt32BE(lengthAsUInt32(entry.idData.count), to: &bytes)
+            appendUInt32BE(try lengthAsUInt32(entry.idData.count), to: &bytes)
             bytes.append(entry.idData)
-            appendUInt32BE(lengthAsUInt32(entry.valueData.count), to: &bytes)
+            appendUInt32BE(try lengthAsUInt32(entry.valueData.count), to: &bytes)
             bytes.append(entry.valueData)
         }
         return bytes
@@ -69,9 +69,11 @@ enum HiveTaskLocalFingerprint {
         withUnsafeBytes(of: &bigEndian) { data.append(contentsOf: $0) }
     }
 
-    private static func lengthAsUInt32(_ length: Int) -> UInt32 {
+    private static func lengthAsUInt32(_ length: Int) throws -> UInt32 {
         guard let value = UInt32(exactly: length) else {
-            preconditionFailure("Value length is out of UInt32 range: \(length)")
+            throw HiveRuntimeError.internalInvariantViolation(
+                "Task-local fingerprint value length is out of UInt32 range: \(length)"
+            )
         }
         return value
     }

@@ -109,7 +109,7 @@ struct TinyGraphExample {
         )
 
         let graph = try makeGraph()
-        let runtime = HiveRuntime(graph: graph, environment: environment)
+        let runtime = try HiveRuntime(graph: graph, environment: environment)
         let threadID = HiveThreadID("example-thread")
 
         print("Starting run...")

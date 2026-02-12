@@ -78,7 +78,7 @@ func testMultipleTaskFailures_ThrowsEarliestOrdinalError() async throws {
     builder.addNode(HiveNodeID("B")) { _ in throw errorB }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("multi-task-failure"),
@@ -144,7 +144,7 @@ func testCommitFailurePrecedence_UnknownChannelBeatsUpdatePolicy() async throws 
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("unknown-vs-update-policy"),
@@ -210,7 +210,7 @@ func testUpdatePolicySingle_GlobalViolatesAcrossTasks_FailsNoCommit() async thro
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("single-global-across-tasks"),
@@ -297,7 +297,7 @@ func testUpdatePolicySingle_TaskLocalPerTask_AllowsAcrossTasks() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("single-tasklocal-per-task"),
@@ -371,7 +371,7 @@ func testReducerThrows_AbortsStep_NoCommit() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("reducer-throws"),
@@ -431,7 +431,7 @@ func testOutOfSteps_StopsWithoutExecutingAnotherStep() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("out-of-steps"),
@@ -515,7 +515,7 @@ func testRetryPolicy_ExponentialBackoff_UsesDeterministicSchedule() async throws
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: clock))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: clock))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("retry-backoff"),
@@ -584,7 +584,7 @@ func testRetryBackoff_CancellationErrorFromClock_TreatedAsCancellation_CancelsOt
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: CancellationOnSleepClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: CancellationOnSleepClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("cancel-on-backoff"),
@@ -655,7 +655,7 @@ func testCancellationDuringStep_EmitsTaskFailedForAllFrontierTasks_InOrdinalOrde
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: (), clock: NoopClock()))
 
     let handle = await runtime.run(
         threadID: HiveThreadID("cancel-during-step"),

@@ -38,13 +38,7 @@ public struct HiveChannelTypeRegistry<Schema: HiveSchema>: Sendable {
     }
 
     private static func failUnknown<T>(channelID: HiveChannelID) throws -> T {
-        #if DEBUG
-        preconditionFailure(
-            "Hive channel ID not found in schema: \(channelID.rawValue)."
-        )
-        #else
         throw HiveRuntimeError.unknownChannelID(channelID)
-        #endif
     }
 
     private static func fail<T>(
@@ -52,16 +46,10 @@ public struct HiveChannelTypeRegistry<Schema: HiveSchema>: Sendable {
         expected: String,
         actual: String
     ) throws -> T {
-        #if DEBUG
-        preconditionFailure(
-            "Hive channel type mismatch for \(channelID.rawValue): expected \(expected), got \(actual)."
-        )
-        #else
         throw HiveRuntimeError.channelTypeMismatch(
             channelID: channelID,
             expectedValueTypeID: expected,
             actualValueTypeID: actual
         )
-        #endif
     }
 }

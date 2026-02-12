@@ -36,7 +36,7 @@ func testUntrackedChannels_ResetOnCheckpointLoad() throws {
     let trackedKey = HiveChannelKey<UntrackedResetSchema, Int>(HiveChannelID("tracked"))
     let untrackedKey = HiveChannelKey<UntrackedResetSchema, Int>(HiveChannelID("scratch"))
 
-    var runningStore = HiveGlobalStore(registry: registry, initialCache: cache)
+    var runningStore = try HiveGlobalStore(registry: registry, initialCache: cache)
     try runningStore.set(trackedKey, 1)
     try runningStore.set(untrackedKey, 99)
 

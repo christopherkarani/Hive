@@ -127,7 +127,7 @@ func modelTurnWorksWithConduitModelClient() async throws {
         model: AnyHiveModelClient(client)
     )
 
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let threadID = HiveThreadID("mt-conduit")
     let handle = await runtime.run(threadID: threadID, input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value

@@ -48,11 +48,49 @@ private enum HGV1Schema: HiveSchema {
     static let channelSpecs: [AnyHiveChannelSpec<HGV1Schema>] = []
 }
 
+private enum HSVTypeIntSchema: HiveSchema {
+    enum Channels {
+        static let shared = HiveChannelKey<HSVTypeIntSchema, Int>(HiveChannelID("shared"))
+    }
+
+    static let channelSpecs: [AnyHiveChannelSpec<HSVTypeIntSchema>] = [
+        AnyHiveChannelSpec(
+            HiveChannelSpec(
+                key: Channels.shared,
+                scope: .global,
+                reducer: .lastWriteWins(),
+                initial: { 0 },
+                codec: nil,
+                persistence: .untracked
+            )
+        )
+    ]
+}
+
+private enum HSVTypeStringSchema: HiveSchema {
+    enum Channels {
+        static let shared = HiveChannelKey<HSVTypeStringSchema, String>(HiveChannelID("shared"))
+    }
+
+    static let channelSpecs: [AnyHiveChannelSpec<HSVTypeStringSchema>] = [
+        AnyHiveChannelSpec(
+            HiveChannelSpec(
+                key: Channels.shared,
+                scope: .global,
+                reducer: .lastWriteWins(),
+                initial: { "" },
+                codec: nil,
+                persistence: .untracked
+            )
+        )
+    ]
+}
+
 @Test
 func testSchemaVersion_GoldenHSV1() throws {
     let registry = try HiveSchemaRegistry<HSV1Schema>()
     let schemaVersion = HiveVersioning.schemaVersion(registry: registry)
-    #expect(schemaVersion == "76a2aa861605de05dad8d5c61c87aa45b56fa74a32c5986397e5cf025866b892")
+    #expect(schemaVersion == "63cc06be45f8094342faf2a3f04088ed6646fdf4a8114cecbed5701eb06be3f6")
 }
 
 @Test
@@ -63,7 +101,46 @@ func testGraphVersion_GoldenHGV1() throws {
     }
 
     let compiled = try builder.compile()
-    #expect(compiled.graphVersion == "6614009a9f5308c8dca81acf8ed7ee4e22a3d946e77a9eb864c70db09d1b993d")
+    #expect(compiled.graphVersion == "9fea713f0fbb89802c76c07e4e508cacc159e94a901d44615f5430ad409d90da")
+}
+
+@Test
+func testSchemaVersion_ChangesWhenChannelValueTypeChanges() throws {
+    let intRegistry = try HiveSchemaRegistry<HSVTypeIntSchema>()
+    let stringRegistry = try HiveSchemaRegistry<HSVTypeStringSchema>()
+
+    let intVersion = HiveVersioning.schemaVersion(registry: intRegistry)
+    let stringVersion = HiveVersioning.schemaVersion(registry: stringRegistry)
+
+    #expect(intVersion != stringVersion)
+}
+
+@Test
+func testGraphVersion_ChangesWhenRetryPolicyChanges() throws {
+    let nodeID = HiveNodeID("A")
+
+    var noRetry = HiveGraphBuilder<HGV1Schema>(start: [nodeID])
+    noRetry.addNode(nodeID, retryPolicy: .none) { _ in
+        HiveNodeOutput(writes: [], next: .end)
+    }
+
+    var retrying = HiveGraphBuilder<HGV1Schema>(start: [nodeID])
+    retrying.addNode(
+        nodeID,
+        retryPolicy: .exponentialBackoff(
+            initialNanoseconds: 1,
+            factor: 2.0,
+            maxAttempts: 3,
+            maxNanoseconds: 10
+        )
+    ) { _ in
+        HiveNodeOutput(writes: [], next: .end)
+    }
+
+    let noRetryCompiled = try noRetry.compile()
+    let retryingCompiled = try retrying.compile()
+
+    #expect(noRetryCompiled.graphVersion != retryingCompiled.graphVersion)
 }
 
 @Test
@@ -86,4 +163,3 @@ func testCompile_NodeIDReservedJoinCharacters_Fails() throws {
         }
     }
 }
-

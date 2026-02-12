@@ -121,7 +121,7 @@ func branchFallsBackToUseGraphEdges() async throws {
         clock: NoopClock(),
         logger: NoopLogger()
     )
-    let runtime = HiveRuntime(graph: graph, environment: environment)
+    let runtime = try HiveRuntime(graph: graph, environment: environment)
 
     let handle = await runtime.run(threadID: HiveThreadID("t1"), input: (), options: HiveRunOptions())
 

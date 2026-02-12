@@ -22,7 +22,7 @@ struct HiveInitialCache<Schema: HiveSchema>: Sendable {
     func valueAny(for id: HiveChannelID) throws -> any Sendable {
         _ = try access.requireSpec(for: id)
         guard let value = valuesByID[id] else {
-            preconditionFailure("Initial cache missing value for channel ID: \(id.rawValue).")
+            throw HiveRuntimeError.storeValueMissing(channelID: id)
         }
         return value
     }

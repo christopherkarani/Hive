@@ -90,3 +90,16 @@ func testTopicReducer_Clear() throws {
     #expect(state.values(for: topic).isEmpty)
 }
 
+@Test("Topic reducer with invalid max values does not hard-fail")
+func testTopicReducer_InvalidMaxValues_DoesNotCrashAndNormalizes() throws {
+    let reducer = HiveReducer<HiveTopicChannelValue<Int>>.topicAppendOnly(maxValuesPerTopic: 0)
+
+    let topic = HiveTopicKey("t")
+    var value: HiveTopicChannelValue<Int> = .state(.empty)
+
+    value = try reducer.reduce(current: value, update: .update(.publish(topic: topic, value: 1)))
+    value = try reducer.reduce(current: value, update: .update(.publish(topic: topic, value: 2)))
+
+    let state = try #require(value.stateValue)
+    #expect(state.values(for: topic) == [2])
+}

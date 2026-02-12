@@ -106,7 +106,7 @@ func testInterrupt_SelectsEarliestTaskOrdinal() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -150,7 +150,7 @@ func testInterruptID_DerivedFromTaskID() async throws {
     }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -209,7 +209,7 @@ func testResume_FirstCommitClearsInterruption() async throws {
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -269,7 +269,7 @@ func testResume_CancelBeforeFirstCommit_KeepsInterruption() async throws {
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -367,7 +367,7 @@ func testResume_VisibleOnlyFirstStep() async throws {
     builder.addEdge(from: HiveNodeID("B"), to: HiveNodeID("C"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -433,7 +433,7 @@ func testApplyExternalWrites_IncrementsStepIndex_KeepsFrontier() async throws {
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )
@@ -518,7 +518,7 @@ func testApplyExternalWrites_RejectsTaskLocalWrites() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
 
     let graph = try builder.compile()
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
     )

@@ -3,28 +3,18 @@ public struct HiveGlobalStore<Schema: HiveSchema>: Sendable {
     private let access: HiveStoreSupport<Schema>
     private var valuesByID: [HiveChannelID: any Sendable]
 
-    public init() {
-        do {
-            let registry = try HiveSchemaRegistry<Schema>()
-            let initialCache = HiveInitialCache(registry: registry)
-            self.init(registry: registry, initialCache: initialCache)
-        } catch {
-            preconditionFailure("Failed to build HiveGlobalStore: \(error)")
-        }
+    public init() throws {
+        let registry = try HiveSchemaRegistry<Schema>()
+        let initialCache = HiveInitialCache(registry: registry)
+        try self.init(registry: registry, initialCache: initialCache)
     }
 
-    init(registry: HiveSchemaRegistry<Schema>, initialCache: HiveInitialCache<Schema>) {
+    init(registry: HiveSchemaRegistry<Schema>, initialCache: HiveInitialCache<Schema>) throws {
         self.access = HiveStoreSupport(registry: registry)
         var values: [HiveChannelID: any Sendable] = [:]
         values.reserveCapacity(registry.channelSpecs.count)
         for spec in registry.channelSpecs where spec.scope == .global {
-            do {
-                values[spec.id] = try initialCache.valueAny(for: spec.id)
-            } catch {
-                preconditionFailure(
-                    "Initial cache missing value for global channel \(spec.id.rawValue): \(error)"
-                )
-            }
+            values[spec.id] = try initialCache.valueAny(for: spec.id)
         }
         self.valuesByID = values
     }
@@ -38,21 +28,13 @@ public struct HiveGlobalStore<Schema: HiveSchema>: Sendable {
         var values: [HiveChannelID: any Sendable] = [:]
         values.reserveCapacity(registry.channelSpecs.count)
         for spec in registry.channelSpecs where spec.scope == .global {
-            do {
-                values[spec.id] = try initialCache.valueAny(for: spec.id)
-            } catch {
-                preconditionFailure(
-                    "Initial cache missing value for global channel \(spec.id.rawValue): \(error)"
-                )
-            }
+            values[spec.id] = try initialCache.valueAny(for: spec.id)
         }
 
         for (id, value) in checkpointedValuesByID {
             let spec = try access.requireScope(.global, for: id)
             guard spec.persistence == .checkpointed else {
-                preconditionFailure(
-                    "Checkpointed override provided for non-checkpointed channel: \(id.rawValue)"
-                )
+                throw HiveRuntimeError.checkpointOverrideNotCheckpointed(channelID: id)
             }
             try access.validateValueType(value, spec: spec)
             values[id] = value
@@ -81,7 +63,7 @@ public struct HiveGlobalStore<Schema: HiveSchema>: Sendable {
 
     func valueAny(for id: HiveChannelID) throws -> any Sendable {
         guard let value = valuesByID[id] else {
-            preconditionFailure("Global store missing value for channel ID: \(id.rawValue).")
+            throw HiveRuntimeError.storeValueMissing(channelID: id)
         }
         return value
     }

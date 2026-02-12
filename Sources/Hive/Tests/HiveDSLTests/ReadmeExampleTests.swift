@@ -118,7 +118,7 @@ func readmeHelloWorldExample() async throws {
     }
 
     let graph = try workflow.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
     let handle = await runtime.run(threadID: HiveThreadID("hello"), input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
 
@@ -183,7 +183,7 @@ func readmeBranchingExample() async throws {
     }
 
     let graph = try workflow.compile()
-    let runtime = HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
     let handle = await runtime.run(threadID: HiveThreadID("branch"), input: (), options: HiveRunOptions())
 
     let eventsTask = Task { await drainEvents(handle.events) }
@@ -251,7 +251,7 @@ func readmeAgentLoopExample() async throws {
         model: AnyHiveModelClient(stub),
         tools: AnyHiveToolRegistry(StubToolRegistry(tools: [tool]))
     )
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let handle = await runtime.run(threadID: HiveThreadID("agent"), input: (), options: HiveRunOptions())
     _ = try await handle.outcome.value
 
@@ -348,7 +348,7 @@ func readmeFanOutJoinInterruptExample() async throws {
         context: (),
         checkpointStore: AnyHiveCheckpointStore(checkpointStore)
     )
-    let runtime = HiveRuntime(graph: graph, environment: env)
+    let runtime = try HiveRuntime(graph: graph, environment: env)
     let threadID = HiveThreadID("fanout")
 
     // Phase 1: Run until interrupt

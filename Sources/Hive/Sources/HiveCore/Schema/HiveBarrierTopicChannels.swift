@@ -178,7 +178,8 @@ public extension HiveReducer {
         maxValuesPerTopic: Int
     ) -> HiveReducer<HiveTopicChannelValue<TopicValue>>
     where Value == HiveTopicChannelValue<TopicValue>, TopicValue: Sendable & Codable {
-        precondition(maxValuesPerTopic > 0, "maxValuesPerTopic must be greater than 0.")
+        // Defensive normalization: invalid configuration should not crash the process.
+        let normalizedMaxValuesPerTopic = max(1, maxValuesPerTopic)
         return HiveReducer<HiveTopicChannelValue<TopicValue>> { current, update in
             func extractState(_ value: HiveTopicChannelValue<TopicValue>) -> HiveTopicState<TopicValue> {
                 switch value {
@@ -186,7 +187,7 @@ public extension HiveReducer {
                     return state
                 case .update(let update):
                     var state = HiveTopicState<TopicValue>.empty
-                    state.apply(update, maxValuesPerTopic: maxValuesPerTopic)
+                    state.apply(update, maxValuesPerTopic: normalizedMaxValuesPerTopic)
                     return state
                 }
             }
@@ -196,7 +197,7 @@ public extension HiveReducer {
             case .state(let newState):
                 state = newState
             case .update(let update):
-                state.apply(update, maxValuesPerTopic: maxValuesPerTopic)
+                state.apply(update, maxValuesPerTopic: normalizedMaxValuesPerTopic)
             }
             return .state(state)
         }

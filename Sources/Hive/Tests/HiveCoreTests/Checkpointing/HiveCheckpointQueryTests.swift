@@ -87,7 +87,7 @@ func hiveRuntimeCheckpointQueryHelpersRequireStore() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(writes: [], next: .end) }
     let graph = try builder.compile()
 
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: HiveEnvironment(
             context: (),
@@ -117,7 +117,7 @@ func hiveRuntimeCheckpointQueryHelpersForward() async throws {
     let graph = try builder.compile()
 
     let store = AnyHiveCheckpointStore<TestSchema>(QueryableStore())
-    let runtime = HiveRuntime(
+    let runtime = try HiveRuntime(
         graph: graph,
         environment: HiveEnvironment(
             context: (),

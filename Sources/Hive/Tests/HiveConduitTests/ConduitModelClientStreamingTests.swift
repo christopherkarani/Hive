@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import HiveConduit
 import Conduit
@@ -20,6 +21,19 @@ private struct StubTextGenerator: TextGenerator, Sendable {
     let result: GenerationResult
     let streamChunks: [GenerationChunk]
     let streamError: StubError?
+    let keepStreamOpenAfterChunks: Bool
+
+    init(
+        result: GenerationResult,
+        streamChunks: [GenerationChunk],
+        streamError: StubError?,
+        keepStreamOpenAfterChunks: Bool = false
+    ) {
+        self.result = result
+        self.streamChunks = streamChunks
+        self.streamError = streamError
+        self.keepStreamOpenAfterChunks = keepStreamOpenAfterChunks
+    }
 
     func generate(
         _ prompt: String,
@@ -68,6 +82,8 @@ private struct StubTextGenerator: TextGenerator, Sendable {
                 }
                 if let error = streamError {
                     continuation.finish(throwing: error)
+                } else if keepStreamOpenAfterChunks {
+                    // Intentionally keep the stream open for completion-path resilience tests.
                 } else {
                     continuation.finish()
                 }
@@ -98,6 +114,66 @@ private func collectChunksAndError(
     } catch {
         return (chunks, error)
     }
+}
+
+private actor AsyncSignal {
+    private var isSignaled = false
+    private var continuations: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    func signal() {
+        guard isSignaled == false else { return }
+        isSignaled = true
+        let pending = continuations.values
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+
+    func wait() async {
+        if isSignaled {
+            return
+        }
+        let waiterID = UUID()
+        await withTaskCancellationHandler(
+            operation: {
+                await withCheckedContinuation { continuation in
+                    if isSignaled {
+                        continuation.resume()
+                        return
+                    }
+                    continuations[waiterID] = continuation
+                }
+            },
+            onCancel: {
+                Task {
+                    await self.cancelWaiter(waiterID)
+                }
+            }
+        )
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let continuation = continuations.removeValue(forKey: id) else { return }
+        continuation.resume()
+    }
+
+    func value() -> Bool {
+        isSignaled
+    }
+}
+
+private func waitForSignal(
+    _ signal: AsyncSignal,
+    maxYields: Int
+) async -> Bool {
+    for _ in 0..<max(1, maxYields) {
+        if await signal.value() {
+            return true
+        }
+        await Task.yield()
+    }
+    return await signal.value()
 }
 
 @Test("ConduitModelClient stream emits tokens then final chunk")
@@ -247,14 +323,65 @@ func conduitModelClientStreamRejectsMissingFinalChunk() async {
     if case let .modelStreamInvalid(reason) = error as? HiveRuntimeError {
         #expect(!reason.isEmpty)
     } else {
-        #expect(false)
+        #expect(Bool(false))
     }
     #expect(tokens.joined() == "Hi")
     #expect(finals.isEmpty)
 }
 
-@Test("ConduitModelClient rejects chunks after final completion")
-func conduitModelClientStreamRejectsExtraChunksAfterFinal() async {
+@Test("ConduitModelClient emits final even if provider stream remains open")
+func conduitModelClientStreamFinalizesWithoutUpstreamFinish() async throws {
+    let streamChunks: [GenerationChunk] = [
+        GenerationChunk(text: "Hi"),
+        GenerationChunk.completion(finishReason: .stop)
+    ]
+    let result = GenerationResult(
+        text: "Hi",
+        tokenCount: 1,
+        generationTime: 0,
+        tokensPerSecond: 0,
+        finishReason: .stop
+    )
+    let provider = StubTextGenerator(
+        result: result,
+        streamChunks: streamChunks,
+        streamError: nil,
+        keepStreamOpenAfterChunks: true
+    )
+    let modelID = StubModelID(rawValue: "stub-model")
+    let client = ConduitModelClient(
+        provider: provider,
+        modelIDForName: { name in
+            guard name == modelID.rawValue else { throw StubError.boom }
+            return modelID
+        },
+        messageID: { "msg-open-stream" }
+    )
+    let request = HiveChatRequest(
+        model: modelID.rawValue,
+        messages: [HiveChatMessage(id: "msg-open", role: .user, content: "hi")],
+        tools: []
+    )
+
+    let finalSeen = AsyncSignal()
+    let consume = Task {
+        for try await chunk in client.stream(request) {
+            if case .final = chunk {
+                await finalSeen.signal()
+                return
+            }
+        }
+    }
+
+    let observedFinal = await waitForSignal(finalSeen, maxYields: 50_000)
+    consume.cancel()
+    _ = await consume.result
+
+    #expect(observedFinal)
+}
+
+@Test("ConduitModelClient ignores chunks after final completion")
+func conduitModelClientStreamIgnoresExtraChunksAfterFinal() async {
     let streamChunks: [GenerationChunk] = [
         GenerationChunk(text: "Hi"),
         GenerationChunk.completion(finishReason: .stop),
@@ -287,10 +414,13 @@ func conduitModelClientStreamRejectsExtraChunksAfterFinal() async {
         tools: []
     )
 
-    let (_, error) = await collectChunksAndError(client.stream(request))
-    if case let .modelStreamInvalid(reason) = error as? HiveRuntimeError {
-        #expect(!reason.isEmpty)
-    } else {
-        #expect(false)
+    let (chunks, error) = await collectChunksAndError(client.stream(request))
+    let finals = chunks.compactMap { chunk -> HiveChatResponse? in
+        if case let .final(response) = chunk { return response }
+        return nil
     }
+
+    #expect(error == nil)
+    #expect(finals.count == 1)
+    #expect(finals.first?.message.content == "Hi")
 }

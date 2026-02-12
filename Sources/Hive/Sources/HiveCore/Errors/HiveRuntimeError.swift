@@ -4,8 +4,10 @@ public enum HiveRuntimeError: Error, Sendable {
 
     case stepIndexOutOfRange(stepIndex: Int)
     case taskOrdinalOutOfRange(ordinal: Int)
+    case invalidTaskLocalFingerprintLength(expected: Int, actual: Int)
 
     case checkpointStoreMissing
+    case checkpointOverrideNotCheckpointed(channelID: HiveChannelID)
     case checkpointVersionMismatch(
         expectedSchema: String,
         expectedGraph: String,
@@ -23,6 +25,8 @@ public enum HiveRuntimeError: Error, Sendable {
     case unknownNodeID(HiveNodeID)
     /// Attempted to access a channel ID that is not present in the schema.
     case unknownChannelID(HiveChannelID)
+    /// A required store/cache value for a declared channel was missing.
+    case storeValueMissing(channelID: HiveChannelID)
     /// Stored value type does not match the expected channel value type.
     case channelTypeMismatch(
         channelID: HiveChannelID,
@@ -52,4 +56,6 @@ public enum HiveRuntimeError: Error, Sendable {
     case modelStreamInvalid(String)
     case toolRegistryMissing
     case modelToolLoopMaxModelInvocationsExceeded(maxModelInvocations: Int)
+
+    case internalInvariantViolation(String)
 }

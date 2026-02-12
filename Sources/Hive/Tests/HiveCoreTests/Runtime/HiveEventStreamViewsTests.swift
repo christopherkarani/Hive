@@ -37,6 +37,66 @@ private func collect<T>(_ stream: AsyncThrowingStream<T, Error>) async throws ->
     return items
 }
 
+private actor AsyncSignal {
+    private var isSignaled = false
+    private var continuations: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    func signal() {
+        guard isSignaled == false else { return }
+        isSignaled = true
+        let pending = continuations.values
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
+    }
+
+    func wait() async {
+        if isSignaled {
+            return
+        }
+        let waiterID = UUID()
+        await withTaskCancellationHandler(
+            operation: {
+                await withCheckedContinuation { continuation in
+                    if isSignaled {
+                        continuation.resume()
+                        return
+                    }
+                    continuations[waiterID] = continuation
+                }
+            },
+            onCancel: {
+                Task {
+                    await self.cancelWaiter(waiterID)
+                }
+            }
+        )
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let continuation = continuations.removeValue(forKey: id) else { return }
+        continuation.resume()
+    }
+
+    func value() -> Bool {
+        isSignaled
+    }
+}
+
+private func waitForSignal(
+    _ signal: AsyncSignal,
+    maxYields: Int
+) async -> Bool {
+    for _ in 0..<max(1, maxYields) {
+        if await signal.value() {
+            return true
+        }
+        await Task.yield()
+    }
+    return await signal.value()
+}
+
 @Test("steps() filters and preserves order")
 func stepsViewFiltersAndPreservesOrder() async throws {
     let (source, continuation) = makeSourceStream()
@@ -153,21 +213,8 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     let (source, continuation) = makeSourceStream()
     let views = HiveEventStreamViews(source)
 
-    actor Signal {
-        private var signaled = false
-
-        func isSignaled() -> Bool {
-            signaled
-        }
-
-        func signal() {
-            guard signaled == false else { return }
-            signaled = true
-        }
-    }
-
-    let terminated = Signal()
-    let secondSubscriberReady = Signal()
+    let terminated = AsyncSignal()
+    let secondSubscriberReady = AsyncSignal()
     continuation.onTermination = { @Sendable _ in
         Task {
             await terminated.signal()
@@ -186,7 +233,7 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     for _ in 0 ..< 5 {
         await Task.yield()
     }
-    #expect(await terminated.isSignaled() == false)
+    #expect(await terminated.value() == false)
 
     let probeIndex: UInt64 = 9_999
     let secondConsumer = Task {
@@ -201,12 +248,16 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
         return indices
     }
 
-    let readyDeadline = Date().addingTimeInterval(0.25)
-    while await secondSubscriberReady.isSignaled() == false, Date() < readyDeadline {
-        continuation.yield(makeEvent(index: probeIndex, kind: .modelToken(text: "probe")))
-        try await Task.sleep(nanoseconds: 10_000_000)
+    let probeEmitter = Task {
+        while Task.isCancelled == false {
+            continuation.yield(makeEvent(index: probeIndex, kind: .modelToken(text: "probe")))
+            await Task.yield()
+        }
     }
-    #expect(await secondSubscriberReady.isSignaled())
+    let secondSubscriberObservedProbe = await waitForSignal(secondSubscriberReady, maxYields: 50_000)
+    probeEmitter.cancel()
+    _ = await probeEmitter.result
+    #expect(secondSubscriberObservedProbe)
 
     continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "y")))
     continuation.finish()
@@ -214,9 +265,6 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     let eventIndices = try await secondConsumer.value
     #expect(eventIndices == [1])
 
-    let deadline = Date().addingTimeInterval(0.25)
-    while await terminated.isSignaled() == false, Date() < deadline {
-        try await Task.sleep(nanoseconds: 10_000_000)
-    }
-    #expect(await terminated.isSignaled())
+    let terminatedAfterFinish = await waitForSignal(terminated, maxYields: 50_000)
+    #expect(terminatedAfterFinish)
 }

@@ -27,11 +27,53 @@ private enum StoreErrorSchema: HiveSchema {
     }
 }
 
+private enum NonCheckpointedGlobalSchema: HiveSchema {
+    static var channelSpecs: [AnyHiveChannelSpec<NonCheckpointedGlobalSchema>] {
+        let key = HiveChannelKey<NonCheckpointedGlobalSchema, Int>(HiveChannelID("untracked"))
+        let spec = HiveChannelSpec(
+            key: key,
+            scope: .global,
+            reducer: HiveReducer { current, update in current + update },
+            initial: { 0 },
+            persistence: .untracked
+        )
+        return [AnyHiveChannelSpec(spec)]
+    }
+}
+
+private enum InvalidEmptyTaskLocalSchema: HiveSchema {
+    static var channelSpecs: [AnyHiveChannelSpec<InvalidEmptyTaskLocalSchema>] {
+        let a = HiveChannelKey<InvalidEmptyTaskLocalSchema, Int>(HiveChannelID("dup"))
+        let b = HiveChannelKey<InvalidEmptyTaskLocalSchema, Int>(HiveChannelID("dup"))
+        let reducer = HiveReducer<Int> { current, update in current + update }
+        return [
+            AnyHiveChannelSpec(
+                HiveChannelSpec(
+                    key: a,
+                    scope: .taskLocal,
+                    reducer: reducer,
+                    initial: { 0 },
+                    persistence: .checkpointed
+                )
+            ),
+            AnyHiveChannelSpec(
+                HiveChannelSpec(
+                    key: b,
+                    scope: .taskLocal,
+                    reducer: reducer,
+                    initial: { 0 },
+                    persistence: .checkpointed
+                )
+            ),
+        ]
+    }
+}
+
 @Test("Store unknown channel throws unknownChannelID")
 func testStore_UnknownChannel_Throws() throws {
     let registry = try HiveSchemaRegistry<StoreErrorSchema>()
     let cache = HiveInitialCache(registry: registry)
-    let global = HiveGlobalStore(registry: registry, initialCache: cache)
+    let global = try HiveGlobalStore(registry: registry, initialCache: cache)
     var taskLocal = HiveTaskLocalStore(registry: registry)
     let view = HiveStoreView(
         global: global,
@@ -95,7 +137,7 @@ func testStore_UnknownChannel_Throws() throws {
 func testStore_ScopeMismatch_Throws() throws {
     let registry = try HiveSchemaRegistry<StoreErrorSchema>()
     let cache = HiveInitialCache(registry: registry)
-    let global = HiveGlobalStore(registry: registry, initialCache: cache)
+    let global = try HiveGlobalStore(registry: registry, initialCache: cache)
     var taskLocal = HiveTaskLocalStore(registry: registry)
 
     let globalKey = HiveChannelKey<StoreErrorSchema, Int>(HiveChannelID("global"))
@@ -141,5 +183,50 @@ func testStore_ScopeMismatch_Throws() throws {
         default:
             #expect(Bool(false))
         }
+    }
+}
+
+@Test("Checkpointed override on non-checkpointed global throws checkpointOverrideNotCheckpointed")
+func testGlobalStore_CheckpointOverrideNotCheckpointed_Throws() throws {
+    let registry = try HiveSchemaRegistry<NonCheckpointedGlobalSchema>()
+    let cache = HiveInitialCache(registry: registry)
+    let channelID = HiveChannelID("untracked")
+
+    do {
+        _ = try HiveGlobalStore(
+            registry: registry,
+            initialCache: cache,
+            checkpointedValuesByID: [channelID: 1]
+        )
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .checkpointOverrideNotCheckpointed(let id):
+            #expect(id == channelID)
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
+    }
+}
+
+@Test("HiveTaskLocalStore.empty captures schema initialization errors as thrown errors")
+func testTaskLocalStoreEmpty_InvalidSchemaThrowsOnAccess() {
+    let store = HiveTaskLocalStore<InvalidEmptyTaskLocalSchema>.empty
+    let key = HiveChannelKey<InvalidEmptyTaskLocalSchema, Int>(HiveChannelID("dup"))
+
+    do {
+        _ = try store.get(key)
+        #expect(Bool(false))
+    } catch let error as HiveCompilationError {
+        switch error {
+        case .duplicateChannelID(let id):
+            #expect(id.rawValue == "dup")
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
     }
 }
