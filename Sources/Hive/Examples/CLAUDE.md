@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3889 | 1:51 PM | 🔵 | HiveCheckpointWaxStore Implementation | ~559 |
+| #3879 | 1:48 PM | 🔵 | Hive TinyGraph Example Demonstrates Core Features | ~435 |
 </claude-mem-context>

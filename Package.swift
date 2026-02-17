@@ -25,12 +25,23 @@ let package = Package(
         .target(
             name: "HiveCore",
             path: "Sources/Hive/Sources/HiveCore",
-            exclude: ["README.md"]
+            exclude: [
+                "README.md",
+                "CLAUDE.md",
+                "Checkpointing/CLAUDE.md",
+                "Errors/CLAUDE.md",
+                "Graph/CLAUDE.md",
+                "HybridInference/CLAUDE.md",
+                "Runtime/CLAUDE.md",
+                "Schema/CLAUDE.md",
+                "Store/CLAUDE.md",
+            ]
         ),
         .target(
             name: "HiveDSL",
             dependencies: ["HiveCore"],
-            path: "Sources/Hive/Sources/HiveDSL"
+            path: "Sources/Hive/Sources/HiveDSL",
+            exclude: ["CLAUDE.md"]
         ),
         .target(
             name: "HiveConduit",
@@ -39,7 +50,7 @@ let package = Package(
                 .product(name: "Conduit", package: "Conduit"),
             ],
             path: "Sources/Hive/Sources/HiveConduit",
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .target(
             name: "HiveCheckpointWax",
@@ -48,7 +59,7 @@ let package = Package(
                 .product(name: "Wax", package: "Wax"),
             ],
             path: "Sources/Hive/Sources/HiveCheckpointWax",
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .target(
             name: "HiveSwiftAgents",
@@ -65,17 +76,19 @@ let package = Package(
                 "HiveCheckpointWax",
             ],
             path: "Sources/Hive/Sources/Hive",
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .executableTarget(
             name: "HiveTinyGraphExample",
             dependencies: ["HiveCore"],
-            path: "Sources/Hive/Examples/TinyGraph"
+            path: "Sources/Hive/Examples/TinyGraph",
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "HiveCoreTests",
             dependencies: ["HiveCore"],
             path: "Sources/Hive/Tests/HiveCoreTests",
+            exclude: ["Runtime/CLAUDE.md"],
             swiftSettings: [
                 .define("HIVE_V11_TRIGGERS"),
             ]
@@ -83,7 +96,8 @@ let package = Package(
         .testTarget(
             name: "HiveDSLTests",
             dependencies: ["HiveDSL"],
-            path: "Sources/Hive/Tests/HiveDSLTests"
+            path: "Sources/Hive/Tests/HiveDSLTests",
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "HiveConduitTests",

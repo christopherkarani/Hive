@@ -50,7 +50,6 @@ let runtime = HiveRuntime(graph: graph, environment: env)
 
 - Multi-step agent graphs with fan-out, joins, and tool-approval gates
 - Human-in-the-loop workflows that pause for review and resume reliably
-- RAG pipelines with on-device vector recall via `HiveRAGWax`
 - Hybrid inference: on-device models + cloud fallback with deterministic routing
 - SwiftUI apps with streaming agent output via `AsyncThrowingStream`
 
@@ -147,34 +146,15 @@ Workflow<Schema> {
 }
 ```
 
-## Macros
-
-The `@HiveSchema` macro eliminates channel boilerplate. Write this:
-
-```swift
-@HiveSchema
-enum MySchema: HiveSchema {
-    @Channel(reducer: "lastWriteWins()", persistence: "untracked")
-    static var _answer: String = ""
-
-    @TaskLocalChannel(reducer: "append()", persistence: "checkpointed")
-    static var _logs: [String] = []
-}
-```
-
-The macro generates typed `HiveChannelKey` properties, `channelSpecs`, codecs, and scope configuration — roughly 20 lines of code you never have to write or maintain.
-
 ## Architecture
 
 ```
 HiveCore  (zero external deps — pure Swift)
 ├── HiveDSL             result-builder workflow DSL
 ├── HiveConduit          Conduit model client adapter
-├── HiveCheckpointWax    Wax-backed checkpoint store
-└── HiveRAGWax           Wax-backed RAG snippets
+└── HiveCheckpointWax    Wax-backed checkpoint store
 
 Hive  (umbrella — re-exports Core + DSL + Conduit + CheckpointWax)
-HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 ```
 
 `HiveCore` has zero external dependencies. Adapters bring in only what they need. You can depend on `HiveCore` alone for maximum control, or `Hive` for batteries-included.
@@ -186,7 +166,7 @@ HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 ```swift
 // Package.swift
 dependencies: [
-    .package(url: "https://github.com/christopherkarani/Hive.git", from: "1.0.0")
+    .package(url: "https://github.com/christopherkarani/Hive.git", branch: "main")
 ]
 
 // Target dependency

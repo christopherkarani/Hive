@@ -26,11 +26,22 @@ let package = Package(
     targets: [
         .target(
             name: "HiveCore",
-            exclude: ["README.md"]
+            exclude: [
+                "README.md",
+                "CLAUDE.md",
+                "Checkpointing/CLAUDE.md",
+                "Errors/CLAUDE.md",
+                "Graph/CLAUDE.md",
+                "HybridInference/CLAUDE.md",
+                "Runtime/CLAUDE.md",
+                "Schema/CLAUDE.md",
+                "Store/CLAUDE.md",
+            ]
         ),
         .target(
             name: "HiveDSL",
-            dependencies: ["HiveCore"]
+            dependencies: ["HiveCore"],
+            exclude: ["CLAUDE.md"]
         ),
         .target(
             name: "HiveConduit",
@@ -38,7 +49,7 @@ let package = Package(
                 "HiveCore",
                 .product(name: "Conduit", package: "Conduit"),
             ],
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .target(
             name: "HiveCheckpointWax",
@@ -46,7 +57,7 @@ let package = Package(
                 "HiveCore",
                 .product(name: "Wax", package: "Wax"),
             ],
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .target(
             name: "HiveSwiftAgents",
@@ -63,23 +74,26 @@ let package = Package(
                 "HiveConduit",
                 "HiveCheckpointWax",
             ],
-            exclude: ["README.md"]
+            exclude: ["README.md", "CLAUDE.md"]
         ),
         .executableTarget(
             name: "HiveTinyGraphExample",
             dependencies: ["HiveCore"],
-            path: "Examples/TinyGraph"
+            path: "Examples/TinyGraph",
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "HiveCoreTests",
             dependencies: ["HiveCore"],
+            exclude: ["Runtime/CLAUDE.md"],
             swiftSettings: [
                 .define("HIVE_V11_TRIGGERS"),
             ]
         ),
         .testTarget(
             name: "HiveDSLTests",
-            dependencies: ["HiveDSL"]
+            dependencies: ["HiveDSL"],
+            exclude: ["CLAUDE.md"]
         ),
         .testTarget(
             name: "HiveConduitTests",

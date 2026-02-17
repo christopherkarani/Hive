@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3889 | 1:51 PM | 🔵 | HiveCheckpointWaxStore Implementation | ~559 |
+| #3881 | 1:49 PM | 🔵 | Hive Checkpoint System Complete Implementation | ~593 |
 </claude-mem-context>

@@ -7,5 +7,5 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3191 | 4:11 AM | 🔵 | HiveCore Mental Model and Usage Patterns | ~478 |
+| #3883 | 1:50 PM | 🔵 | HiveCore Module Documentation and Usage Patterns | ~659 |
 </claude-mem-context>

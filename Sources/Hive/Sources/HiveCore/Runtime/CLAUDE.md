@@ -7,6 +7,13 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #3345 | 4:42 AM | 🔵 | HiveEnvironment Dependency Injection Container | ~412 |
 | #3187 | 4:11 AM | 🔵 | Hive Event Types for Runtime Observability | ~442 |
 | #3177 | 4:10 AM | 🔵 | HiveRuntime Actor-Based Execution Engine | ~466 |
+
+### Feb 17, 2026
+
+| ID | Time | T | Title | Read |
+|----|------|---|-------|------|
+| #4422 | 6:28 AM | 🔵 | HiveLogger Protocol Confirmed — Only debug, info, error Methods | ~454 |
 </claude-mem-context>

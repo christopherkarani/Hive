@@ -14,6 +14,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         self.storeSupport = HiveStoreSupport(registry: registry)
         self.threadStates = [:]
         self.threadQueues = [:]
+        self.threadRunIDs = [:]
     }
 
     public func run(
@@ -22,7 +23,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
         let attemptID = HiveRunAttemptID(UUID())
-        let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
+        let runID = assignedRunID(for: threadID)
         let capacity = max(1, options.eventBufferCapacity)
         let streamController = HiveEventStreamController(capacity: capacity)
         let events = streamController.makeStream()
@@ -64,7 +65,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
         let attemptID = HiveRunAttemptID(UUID())
-        let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
+        let runID = assignedRunID(for: threadID)
         let capacity = max(1, options.eventBufferCapacity)
         let streamController = HiveEventStreamController(capacity: capacity)
         let events = streamController.makeStream()
@@ -99,7 +100,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
         let attemptID = HiveRunAttemptID(UUID())
-        let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
+        let runID = assignedRunID(for: threadID)
         let capacity = max(1, options.eventBufferCapacity)
         let streamController = HiveEventStreamController(capacity: capacity)
         let events = streamController.makeStream()
@@ -167,6 +168,20 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     private var threadStates: [HiveThreadID: ThreadState<Schema>]
     private var threadQueues: [HiveThreadID: Task<Void, Never>]
+    private var threadRunIDs: [HiveThreadID: HiveRunID]
+
+    private func assignedRunID(for threadID: HiveThreadID) -> HiveRunID {
+        if let existing = threadStates[threadID]?.runID {
+            threadRunIDs[threadID] = existing
+            return existing
+        }
+        if let assigned = threadRunIDs[threadID] {
+            return assigned
+        }
+        let assigned = HiveRunID(UUID())
+        threadRunIDs[threadID] = assigned
+        return assigned
+    }
 
     private func makeFailFastHandle(
         threadID: HiveThreadID,
@@ -177,6 +192,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         let runID: HiveRunID
         if let existing = threadStates[threadID] {
             runID = existing.runID
+        } else if let assigned = threadRunIDs[threadID] {
+            runID = assigned
         } else {
             runID = HiveRunID(UUID())
         }
@@ -202,13 +219,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             return existing
         }
 
-        let state = try makeFreshThreadState(for: threadID)
+        let state = try makeFreshThreadState(for: threadID, runID: assignedRunID(for: threadID))
         threadStates[threadID] = state
+        threadRunIDs[threadID] = state.runID
         return state
     }
 
-    private func makeFreshThreadState(for _: HiveThreadID) throws -> ThreadState<Schema> {
-        let runID = HiveRunID(UUID())
+    private func makeFreshThreadState(for _: HiveThreadID, runID: HiveRunID) throws -> ThreadState<Schema> {
         let global = try HiveGlobalStore(registry: registry, initialCache: initialCache)
         let joinSeen = Dictionary(uniqueKeysWithValues: graph.joinEdges.map { ($0.id, Set<HiveNodeID>()) })
         return ThreadState(
@@ -227,6 +244,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     private func resolveBaselineState(
         threadID: HiveThreadID,
+        runID: HiveRunID,
         debugPayloads: Bool,
         emitter: HiveEventEmitter
     ) async throws -> ThreadState<Schema> {
@@ -235,26 +253,34 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         guard let store = environment.checkpointStore else {
-            let fresh = try makeFreshThreadState(for: threadID)
+            let fresh = try makeFreshThreadState(for: threadID, runID: runID)
             threadStates[threadID] = fresh
+            threadRunIDs[threadID] = fresh.runID
             return fresh
         }
 
         let checkpoint = try await store.loadLatest(threadID: threadID)
         guard let checkpoint else {
-            let fresh = try makeFreshThreadState(for: threadID)
+            let fresh = try makeFreshThreadState(for: threadID, runID: runID)
             threadStates[threadID] = fresh
+            threadRunIDs[threadID] = fresh.runID
             return fresh
         }
 
-        let state = try decodeCheckpoint(checkpoint, debugPayloads: debugPayloads)
+        var state = try decodeCheckpoint(checkpoint, debugPayloads: debugPayloads)
+        // Keep handle/event/node runID aligned when scheduling chose a runID before checkpoint materialization.
+        if state.runID != runID {
+            state.runID = runID
+        }
         threadStates[threadID] = state
+        threadRunIDs[threadID] = state.runID
         emitter.emit(kind: .checkpointLoaded(checkpointID: checkpoint.id), stepIndex: nil, taskOrdinal: nil)
         return state
     }
 
     private func loadCheckpointStateForResume(
         threadID: HiveThreadID,
+        runID: HiveRunID,
         interruptID: HiveInterruptID,
         debugPayloads: Bool,
         emitter: HiveEventEmitter
@@ -268,7 +294,10 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             throw HiveRuntimeError.noCheckpointToResume
         }
 
-        let state = try decodeCheckpoint(checkpoint, debugPayloads: debugPayloads)
+        var state = try decodeCheckpoint(checkpoint, debugPayloads: debugPayloads)
+        if state.runID != runID {
+            state.runID = runID
+        }
         guard let interruption = state.interruption else {
             throw HiveRuntimeError.noInterruptToResume
         }
@@ -277,6 +306,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         threadStates[threadID] = state
+        threadRunIDs[threadID] = state.runID
         emitter.emit(kind: .checkpointLoaded(checkpointID: checkpoint.id), stepIndex: nil, taskOrdinal: nil)
         return state
     }
@@ -551,6 +581,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             var state = try await resolveBaselineState(
                 threadID: threadID,
+                runID: runID,
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
@@ -744,6 +775,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             var state = try await loadCheckpointStateForResume(
                 threadID: threadID,
+                runID: runID,
                 interruptID: interruptID,
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
@@ -914,6 +946,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             var state = try await resolveBaselineState(
                 threadID: threadID,
+                runID: runID,
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )

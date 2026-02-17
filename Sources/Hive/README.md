@@ -15,8 +15,6 @@ Hive is a deterministic Swift graph runtime with a SwiftUI‑style DSL and optio
 - `HiveDSL` — SwiftUI‑style workflow DSL (nodes, edges, branches, effects, patch/diff).
 - `HiveConduit` — Conduit-backed `HiveModelClient` adapter.
 - `HiveCheckpointWax` — Wax-backed checkpoint store.
-- `HiveRAGWax` — Wax RAG primitives (e.g., `WaxRecall`).
-- `HiveMacros` — optional macros to generate channel keys/specs and workflow blueprints.
 - SwiftAgents integration (separate package): `HiveSwiftAgents` tool registry adapter.
 
 ## Start Here
@@ -32,8 +30,6 @@ Hive is a deterministic Swift graph runtime with a SwiftUI‑style DSL and optio
 ## Usage
 - Full stack: `import Hive`
 - DSL-only: `import HiveDSL`
-- RAG primitives: `import HiveRAGWax`
-- Macros: `import HiveMacros`
 - Minimal core: `import HiveCore`
 
 ## DSL Quickstart (Workflow + Effects)
@@ -136,35 +132,6 @@ let environment = HiveEnvironment<SupportSchema>(
 )
 ```
 
-## RAG (Wax)
-```swift
-import HiveRAGWax
-import Wax
-
-struct RAGContext: Sendable { let memory: MemoryOrchestrator }
-
-enum RAGSchema: HiveSchema {
-    static let snippets = HiveChannelKey<RAGSchema, [HiveRAGSnippet]>(HiveChannelID("snippets"))
-    static let channelSpecs: [AnyHiveChannelSpec<RAGSchema>] = [
-        AnyHiveChannelSpec(
-            HiveChannelSpec(
-                key: snippets,
-                scope: .global,
-                reducer: .lastWriteWins(),
-                updatePolicy: .single,
-                initial: { [] },
-                persistence: .untracked
-            )
-        )
-    ]
-}
-
-let workflow = Workflow<RAGSchema> {
-    WaxRecall("Recall", memory: \.memory, query: "alpha", writeSnippetsTo: RAGSchema.snippets)
-        .start()
-}
-```
-
 ## Patch & Diff
 ```swift
 var patch = WorkflowPatch<SupportSchema>()
@@ -176,23 +143,6 @@ let result = try patch.apply(to: workflow.compile())
 let mermaid = result.diff.renderMermaid()
 ```
 Note: `insertProbe` only rewrites static edges (not routers or joins).
-
-## Macros (Optional)
-```swift
-import HiveMacros
-
-@HiveSchema
-enum MacroSchema: HiveSchema {
-    @Channel(reducer: "append()", persistence: "untracked")
-    static var _messages: [String] = []
-
-    @TaskLocalChannel(reducer: "lastWriteWins()", persistence: "checkpointed")
-    static var _localState: String = ""
-}
-```
-Notes:
-- Use the `_name` convention to generate `static let name` channel keys.
-- Checkpointed/task‑local channels use `HiveJSONCodec` by default; pass `codec: "MyCodec()"` for custom codecs.
 
 ## Runtime Basics
 ```swift

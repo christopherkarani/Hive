@@ -223,6 +223,134 @@ func testCheckpointID_DerivedFromRunIDAndStepIndex() async throws {
     #expect(checkpoint.id.rawValue == expected)
 }
 
+@Test("Handle runID matches node runContext runID on fresh threads")
+func testRunIDConsistency_FreshThread() async throws {
+    enum Schema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let key = HiveChannelKey<Schema, HiveRunID>(HiveChannelID("observedRunID"))
+            let spec = HiveChannelSpec(
+                key: key,
+                scope: .global,
+                reducer: HiveReducer.lastWriteWins(),
+                updatePolicy: .single,
+                initial: { HiveRunID(UUID(uuidString: "00000000-0000-0000-0000-000000000000")!) },
+                persistence: .untracked
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let observedRunIDKey = HiveChannelKey<Schema, HiveRunID>(HiveChannelID("observedRunID"))
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { input in
+        HiveNodeOutput(
+            writes: [AnyHiveWrite(observedRunIDKey, input.run.runID)],
+            next: .end
+        )
+    }
+
+    let graph = try builder.compile()
+    let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
+
+    let handle = await runtime.run(
+        threadID: HiveThreadID("runid-fresh"),
+        input: (),
+        options: HiveRunOptions()
+    )
+    let eventsTask = Task { await collectEvents(handle.events) }
+    let outcome = try await handle.outcome.value
+    let events = await eventsTask.value
+
+    guard case let .finished(output, _) = outcome else {
+        #expect(Bool(false))
+        return
+    }
+    guard case let .fullStore(store) = output else {
+        #expect(Bool(false))
+        return
+    }
+
+    #expect(try store.get(observedRunIDKey) == handle.runID)
+    #expect(events.allSatisfy { $0.id.runID == handle.runID })
+}
+
+@Test("Checkpoint-loaded run keeps handle runID and runContext runID aligned")
+func testRunIDConsistency_CheckpointLoadedThread() async throws {
+    enum Schema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let key = HiveChannelKey<Schema, HiveRunID>(HiveChannelID("observedRunID"))
+            let spec = HiveChannelSpec(
+                key: key,
+                scope: .global,
+                reducer: HiveReducer.lastWriteWins(),
+                updatePolicy: .single,
+                initial: { HiveRunID(UUID(uuidString: "00000000-0000-0000-0000-000000000000")!) },
+                persistence: .untracked
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let observedRunIDKey = HiveChannelKey<Schema, HiveRunID>(HiveChannelID("observedRunID"))
+    let store = TestCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { input in
+        HiveNodeOutput(
+            writes: [AnyHiveWrite(observedRunIDKey, input.run.runID)],
+            next: .end
+        )
+    }
+
+    let graph = try builder.compile()
+
+    let checkpoint = HiveCheckpoint<Schema>(
+        id: HiveCheckpointID("checkpoint-runid-consistency"),
+        threadID: HiveThreadID("runid-from-checkpoint"),
+        runID: HiveRunID(UUID(uuidString: "22222222-2222-2222-2222-222222222222")!),
+        stepIndex: 0,
+        schemaVersion: graph.schemaVersion,
+        graphVersion: graph.graphVersion,
+        globalDataByChannelID: [:],
+        frontier: [],
+        joinBarrierSeenByJoinID: [:],
+        interruption: nil
+    )
+    await store.setOverride(checkpoint)
+
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+
+    let handle = await runtime.run(
+        threadID: HiveThreadID("runid-from-checkpoint"),
+        input: (),
+        options: HiveRunOptions()
+    )
+    let eventsTask = Task { await collectEvents(handle.events) }
+    let outcome = try await handle.outcome.value
+    let events = await eventsTask.value
+
+    #expect(events.contains { event in
+        if case .checkpointLoaded = event.kind { return true }
+        return false
+    })
+
+    guard case let .finished(output, _) = outcome else {
+        #expect(Bool(false))
+        return
+    }
+    guard case let .fullStore(store) = output else {
+        #expect(Bool(false))
+        return
+    }
+
+    #expect(try store.get(observedRunIDKey) == handle.runID)
+    #expect(events.allSatisfy { $0.id.runID == handle.runID })
+}
+
 @Test("Checkpoint resume parity matches uninterrupted run output")
 func testCheckpointResumeParity_MatchesUninterruptedRun() async throws {
     enum Schema: HiveSchema {
