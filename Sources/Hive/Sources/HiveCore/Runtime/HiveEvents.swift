@@ -34,6 +34,19 @@ public struct HiveEvent: Sendable {
     }
 }
 
+/// A single channel's value in a store snapshot or channel update event.
+public struct HiveSnapshotValue: Sendable {
+    public let channelID: HiveChannelID
+    public let payloadHash: String
+    public let debugValue: (any Sendable)?
+
+    public init(channelID: HiveChannelID, payloadHash: String, debugValue: (any Sendable)? = nil) {
+        self.channelID = channelID
+        self.payloadHash = payloadHash
+        self.debugValue = debugValue
+    }
+}
+
 /// Event kinds emitted during a run.
 public enum HiveEventKind: Sendable {
     case runStarted(threadID: HiveThreadID)
@@ -52,6 +65,9 @@ public enum HiveEventKind: Sendable {
     case writeApplied(channelID: HiveChannelID, payloadHash: String)
     case checkpointSaved(checkpointID: HiveCheckpointID)
     case checkpointLoaded(checkpointID: HiveCheckpointID)
+
+    case storeSnapshot(channelValues: [HiveSnapshotValue])
+    case channelUpdates(channelValues: [HiveSnapshotValue])
 
     case modelInvocationStarted(model: String)
     case modelToken(text: String)

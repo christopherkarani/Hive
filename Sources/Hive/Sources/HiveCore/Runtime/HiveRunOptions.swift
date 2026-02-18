@@ -6,6 +6,18 @@ public enum HiveCheckpointPolicy: Sendable {
     case onInterrupt
 }
 
+/// Controls what additional events the runtime emits after each step.
+public enum HiveStreamingMode: Sendable, Equatable {
+    /// Default — no additional streaming events beyond the standard event stream.
+    case events
+    /// Emit a full store snapshot after each step.
+    case values
+    /// Emit only the channels that were written in each step.
+    case updates
+    /// Emit both a full store snapshot and channel updates after each step.
+    case combined
+}
+
 /// Runtime execution options for a run attempt.
 public struct HiveRunOptions: Sendable {
     public let maxSteps: Int
@@ -15,6 +27,7 @@ public struct HiveRunOptions: Sendable {
     public let deterministicTokenStreaming: Bool
     public let eventBufferCapacity: Int
     public let outputProjectionOverride: HiveOutputProjection?
+    public let streamingMode: HiveStreamingMode
 
     public init(
         maxSteps: Int = 100,
@@ -23,7 +36,8 @@ public struct HiveRunOptions: Sendable {
         debugPayloads: Bool = false,
         deterministicTokenStreaming: Bool = false,
         eventBufferCapacity: Int = 4096,
-        outputProjectionOverride: HiveOutputProjection? = nil
+        outputProjectionOverride: HiveOutputProjection? = nil,
+        streamingMode: HiveStreamingMode = .events
     ) {
         self.maxSteps = maxSteps
         self.maxConcurrentTasks = maxConcurrentTasks
@@ -32,5 +46,6 @@ public struct HiveRunOptions: Sendable {
         self.deterministicTokenStreaming = deterministicTokenStreaming
         self.eventBufferCapacity = eventBufferCapacity
         self.outputProjectionOverride = outputProjectionOverride
+        self.streamingMode = streamingMode
     }
 }

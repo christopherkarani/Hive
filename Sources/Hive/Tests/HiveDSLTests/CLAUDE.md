@@ -7,5 +7,6 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
-| #3889 | 1:51 PM | 🔵 | HiveCheckpointWaxStore Implementation | ~559 |
+| #3895 | 1:53 PM | 🔵 | Hive Workflow Compilation Tests | ~392 |
+| #3894 | " | 🔵 | Hive README Examples Comprehensive Test Suite | ~665 |
 </claude-mem-context>
