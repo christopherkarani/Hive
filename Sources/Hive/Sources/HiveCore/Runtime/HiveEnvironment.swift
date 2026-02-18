@@ -21,6 +21,7 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
     public let inferenceHints: HiveInferenceHints?
     public let tools: AnyHiveToolRegistry?
     public let checkpointStore: AnyHiveCheckpointStore<Schema>?
+    public let memoryStore: AnyHiveMemoryStore?
 
     public init(
         context: Schema.Context,
@@ -30,7 +31,8 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
         modelRouter: (any HiveModelRouter)? = nil,
         inferenceHints: HiveInferenceHints? = nil,
         tools: AnyHiveToolRegistry? = nil,
-        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil
+        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil,
+        memoryStore: AnyHiveMemoryStore? = nil
     ) {
         self.context = context
         self.clock = clock
@@ -40,5 +42,6 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
         self.inferenceHints = inferenceHints
         self.tools = tools
         self.checkpointStore = checkpointStore
+        self.memoryStore = memoryStore
     }
 }

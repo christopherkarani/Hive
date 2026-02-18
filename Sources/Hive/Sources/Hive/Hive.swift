@@ -2,6 +2,7 @@
 @_exported import HiveDSL
 @_exported import HiveConduit
 @_exported import HiveCheckpointWax
+@_exported import HiveRAGWax
 
 /// Namespace for the Hive umbrella module version.
 public enum HiveVersion {

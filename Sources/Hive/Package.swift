@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "HiveDSL", targets: ["HiveDSL"]),
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
+        .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
         .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
@@ -49,6 +50,13 @@ let package = Package(
             exclude: ["README.md"]
         ),
         .target(
+            name: "HiveRAGWax",
+            dependencies: [
+                "HiveCore",
+                .product(name: "Wax", package: "Wax"),
+            ]
+        ),
+        .target(
             name: "HiveSwiftAgents",
             dependencies: [
                 "HiveCore",
@@ -62,6 +70,7 @@ let package = Package(
                 "HiveDSL",
                 "HiveConduit",
                 "HiveCheckpointWax",
+                "HiveRAGWax",
             ],
             exclude: ["README.md"]
         ),
@@ -91,6 +100,10 @@ let package = Package(
         .testTarget(
             name: "HiveCheckpointWaxTests",
             dependencies: ["HiveCheckpointWax"]
+        ),
+        .testTarget(
+            name: "HiveRAGWaxTests",
+            dependencies: ["HiveRAGWax"]
         ),
         .testTarget(
             name: "HiveSwiftAgentsTests",
