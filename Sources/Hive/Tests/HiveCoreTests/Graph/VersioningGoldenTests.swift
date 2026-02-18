@@ -48,6 +48,25 @@ private enum HGV1Schema: HiveSchema {
     static let channelSpecs: [AnyHiveChannelSpec<HGV1Schema>] = []
 }
 
+private enum HGV1MissingCodecSchema: HiveSchema {
+    enum Channels {
+        static let state = HiveChannelKey<HGV1MissingCodecSchema, Int>(HiveChannelID("state"))
+    }
+
+    static let channelSpecs: [AnyHiveChannelSpec<HGV1MissingCodecSchema>] = [
+        AnyHiveChannelSpec(
+            HiveChannelSpec(
+                key: Channels.state,
+                scope: .global,
+                reducer: .lastWriteWins(),
+                initial: { 0 },
+                codec: nil,
+                persistence: .checkpointed
+            )
+        )
+    ]
+}
+
 private enum HSVTypeIntSchema: HiveSchema {
     enum Channels {
         static let shared = HiveChannelKey<HSVTypeIntSchema, Int>(HiveChannelID("shared"))
@@ -158,6 +177,26 @@ func testCompile_NodeIDReservedJoinCharacters_Fails() throws {
         switch error {
         case .invalidNodeIDContainsReservedJoinCharacters(let nodeID):
             #expect(nodeID == badID)
+        default:
+            #expect(Bool(false))
+        }
+    }
+}
+
+@Test
+func testCompile_MissingRequiredCodec_Fails() throws {
+    var builder = HiveGraphBuilder<HGV1MissingCodecSchema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in
+        HiveNodeOutput(next: .end)
+    }
+
+    do {
+        _ = try builder.compile()
+        #expect(Bool(false))
+    } catch let error as HiveCompilationError {
+        switch error {
+        case .missingRequiredCodec(let channelID):
+            #expect(channelID == HGV1MissingCodecSchema.Channels.state.id)
         default:
             #expect(Bool(false))
         }

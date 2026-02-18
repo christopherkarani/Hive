@@ -608,20 +608,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 emitter: emitter
             )
 
+            if let interruption = state.interruption {
+                throw HiveRuntimeError.interruptPending(interruptID: interruption.id)
+            }
+
             let inputContext = HiveInputContext(threadID: threadID, runID: state.runID, stepIndex: state.stepIndex)
             let inputWrites = try Schema.inputWrites(input, inputContext: inputContext)
-
-            if let interruption = state.interruption {
-                // A pending interrupt can only be superseded by explicit new input writes.
-                // If there is no new input payload, fail closed and keep interruption pending.
-                guard inputWrites.isEmpty == false else {
-                    throw HiveRuntimeError.interruptPending(interruptID: interruption.id)
-                }
-
-                state.interruption = nil
-                state.frontier = []
-                state.joinSeenParents = [:]
-            }
 
             if state.frontier.isEmpty {
                 state.frontier = graph.start.map {
@@ -843,19 +835,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     attemptID: attemptID,
                     options: options,
                     emitter: emitter,
-                    resume: hasCommittedFirstResumedStep ? nil : resume
+                    resume: hasCommittedFirstResumedStep ? nil : resume,
+                    clearsPendingInterruptionAfterCommit: hasCommittedFirstResumedStep == false
                 )
 
                 var nextState = stepOutcome.nextState
-
-                // Clear the pending interruption only after the first successfully committed resumed step,
-                // unless a new interrupt is selected in that same commit.
-                if hasCommittedFirstResumedStep == false {
-                    hasCommittedFirstResumedStep = true
-                    if stepOutcome.selectedInterrupt == nil {
-                        nextState.interruption = nil
-                    }
-                }
 
                 if let checkpoint = stepOutcome.checkpointToSave {
                     guard let store = environment.checkpointStore else {
@@ -868,6 +852,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 state = nextState
                 threadStates[threadID] = nextState
                 stepsExecutedThisAttempt += 1
+                if hasCommittedFirstResumedStep == false {
+                    hasCommittedFirstResumedStep = true
+                }
 
                 if !stepOutcome.writtenGlobalChannels.isEmpty {
                     for channelID in stepOutcome.writtenGlobalChannels {
@@ -1406,7 +1393,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         attemptID: HiveRunAttemptID,
         options: HiveRunOptions,
         emitter: HiveEventEmitter,
-        resume: HiveResume<Schema>?
+        resume: HiveResume<Schema>?,
+        clearsPendingInterruptionAfterCommit: Bool = false
     ) async throws -> StepOutcome<Schema> {
         var state = state
         let stepIndex = state.stepIndex
@@ -1577,6 +1565,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         )
 
         let selectedInterrupt = try selectInterrupt(tasks: tasks, outputs: outputs)
+        if let selectedInterrupt {
+            nextState.interruption = selectedInterrupt
+        } else if clearsPendingInterruptionAfterCommit {
+            nextState.interruption = nil
+        }
+
         var checkpointToSave: HiveCheckpoint<Schema>?
         let shouldSaveForPolicy: Bool
         switch options.checkpointPolicy {
@@ -1595,9 +1589,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             // Commit-time enforcement: checkpoint boundaries require checkpoint store.
             guard environment.checkpointStore != nil else {
                 throw HiveRuntimeError.checkpointStoreMissing
-            }
-            if let selectedInterrupt {
-                nextState.interruption = selectedInterrupt
             }
             checkpointToSave = try makeCheckpoint(
                 threadID: threadID,
@@ -2225,7 +2216,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         if writes.isEmpty {
             return global
         }
-        // Router "fresh read" requires applying this task's global writes in ascending emission order.
+        // Router fresh-read semantics are intentionally per-task: routers see only pre-step global state plus
+        // the current task's writes. Writes from lower ordinals in the same step are excluded to avoid routing
+        // outcomes that vary with task execution order and to preserve deterministic behavior (see HIVE_SPEC §10.4).
         // Channels are independent, but error precedence (e.g., reducer throws) must follow emission order.
         for write in writes {
             let current = try global.valueAny(for: write.channelID)

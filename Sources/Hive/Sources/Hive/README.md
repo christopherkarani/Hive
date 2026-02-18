@@ -6,5 +6,6 @@ Use `import Hive` when you want the core runtime plus the DSL and Conduit/Wax ad
 
 Optional modules:
 - `HiveRAGWax` for Wax RAG primitives.
-- `HiveMacros` for schema/channel macros.
 - SwiftAgents integration lives in the SwiftAgents package (`HiveSwiftAgents`).
+
+Macros are not currently included in this package build.

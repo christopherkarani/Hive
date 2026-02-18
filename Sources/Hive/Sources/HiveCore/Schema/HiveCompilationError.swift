@@ -23,4 +23,5 @@ public enum HiveCompilationError: Error, Sendable {
     case invalidNodeRunWhenChannelsEmpty(nodeID: HiveNodeID)
     case invalidNodeRunWhenUnknownChannel(nodeID: HiveNodeID, channelID: HiveChannelID)
     case invalidNodeRunWhenIncludesTaskLocalChannel(nodeID: HiveNodeID, channelID: HiveChannelID)
+    case missingRequiredCodec(channelID: HiveChannelID)
 }

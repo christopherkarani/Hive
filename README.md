@@ -149,20 +149,7 @@ Workflow<Schema> {
 
 ## Macros
 
-The `@HiveSchema` macro eliminates channel boilerplate. Write this:
-
-```swift
-@HiveSchema
-enum MySchema: HiveSchema {
-    @Channel(reducer: "lastWriteWins()", persistence: "untracked")
-    static var _answer: String = ""
-
-    @TaskLocalChannel(reducer: "append()", persistence: "checkpointed")
-    static var _logs: [String] = []
-}
-```
-
-The macro generates typed `HiveChannelKey` properties, `channelSpecs`, codecs, and scope configuration — roughly 20 lines of code you never have to write or maintain.
+Macros are not currently included in this package build.
 
 ## Architecture
 
@@ -174,7 +161,6 @@ HiveCore  (zero external deps — pure Swift)
 └── HiveRAGWax           Wax-backed RAG snippets
 
 Hive  (umbrella — re-exports Core + DSL + Conduit + CheckpointWax)
-HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 ```
 
 `HiveCore` has zero external dependencies. Adapters bring in only what they need. You can depend on `HiveCore` alone for maximum control, or `Hive` for batteries-included.

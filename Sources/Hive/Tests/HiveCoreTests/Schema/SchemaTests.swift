@@ -71,6 +71,48 @@ func anyHiveWritePreservesChannelIDAndValue() throws {
     #expect(localWrite.value as? Int == 7)
 }
 
+@Test("AnyHiveChannelSpec _reduceBox maps type mismatch to channelTypeMismatch")
+func anyHiveChannelSpecReduceBoxTypeMismatchMapping() throws {
+    let key = HiveChannelKey<TestSchema, Int>(HiveChannelID("count"))
+    let spec = HiveChannelSpec(
+        key: key,
+        scope: .global,
+        reducer: HiveReducer.lastWriteWins(),
+        updatePolicy: .single,
+        initial: { 0 },
+        persistence: .untracked
+    )
+    let erased = AnyHiveChannelSpec(spec)
+
+    do {
+        _ = try erased._reduceBox("bad", 1)
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .channelTypeMismatch(let channelID, let expected, let actual):
+            #expect(channelID == key.id)
+            #expect(expected == String(reflecting: Int.self))
+            #expect(actual == String(reflecting: String.self))
+        default:
+            #expect(Bool(false))
+        }
+    }
+
+    do {
+        _ = try erased._reduceBox(0, "bad")
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .channelTypeMismatch(let channelID, let expected, let actual):
+            #expect(channelID == key.id)
+            #expect(expected == String(reflecting: Int.self))
+            #expect(actual == String(reflecting: String.self))
+        default:
+            #expect(Bool(false))
+        }
+    }
+}
+
 @Test("HiveSchemaRegistry rejects duplicate channel IDs")
 func hiveSchemaRegistryRejectsDuplicates() throws {
     let key = HiveChannelKey<TestSchema, Int>(HiveChannelID("dup"))

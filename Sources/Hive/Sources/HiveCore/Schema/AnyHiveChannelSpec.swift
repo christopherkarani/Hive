@@ -31,10 +31,18 @@ public struct AnyHiveChannelSpec<Schema: HiveSchema>: Sendable {
         self._initialBox = { spec.initial() }
         self._reduceBox = { current, update in
             guard let typedCurrent = current as? Value else {
-                throw HiveChannelSpecTypeMismatchError.expected(Value.self, actual: type(of: current))
+                throw HiveRuntimeError.channelTypeMismatch(
+                    channelID: spec.key.id,
+                    expectedValueTypeID: String(reflecting: Value.self),
+                    actualValueTypeID: String(reflecting: type(of: current))
+                )
             }
             guard let typedUpdate = update as? Value else {
-                throw HiveChannelSpecTypeMismatchError.expected(Value.self, actual: type(of: update))
+                throw HiveRuntimeError.channelTypeMismatch(
+                    channelID: spec.key.id,
+                    expectedValueTypeID: String(reflecting: Value.self),
+                    actualValueTypeID: String(reflecting: type(of: update))
+                )
             }
             return try spec.reducer.reduce(current: typedCurrent, update: typedUpdate)
         }

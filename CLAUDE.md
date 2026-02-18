@@ -19,7 +19,6 @@ swift test --filter HiveDSLTests
 swift test --filter HiveConduitTests
 swift test --filter HiveCheckpointWaxTests
 swift test --filter HiveRAGWaxTests
-swift test --filter HiveMacrosTests
 
 # Run the example graph
 swift run HiveTinyGraphExample
@@ -41,10 +40,9 @@ HiveCore  (zero external deps)
   └── HiveRAGWax       (Wax-backed RAG snippets, depends on HiveDSL)
 
 Hive  (umbrella: re-exports HiveCore + HiveDSL + HiveConduit + HiveCheckpointWax)
-HiveMacros / HiveMacrosImpl  (swift-syntax compiler plugin macros)
 ```
 
-External dependencies: `Conduit` (LLM provider abstraction), `Wax` (on-device vector store), `swift-syntax` (macros).
+External dependencies: `Conduit` (LLM provider abstraction), `Wax` (on-device vector store).
 
 ### Execution Model (BSP Supersteps)
 
@@ -84,9 +82,7 @@ Nodes can return `HiveInterruptRequest` in their output. The runtime pauses, sav
 
 ### Macros
 
-- `@HiveSchema` — generates `channelSpecs` from annotated properties
-- `@Channel` / `@TaskLocalChannel` — annotate channel properties with scope, reducer, persistence
-- `@WorkflowBlueprint` — generates workflow component boilerplate
+Macros are not currently included in this package build.
 
 ## Testing Conventions
 
@@ -94,7 +90,6 @@ Nodes can return `HiveInterruptRequest` in their output. The runtime pauses, sav
 - Each test defines an inline `enum Schema: HiveSchema` with the exact channels needed
 - Helper patterns: `TestClock` (noop), `TestLogger` (noop), `makeEnvironment()`, `collectEvents()` for draining event streams
 - Tests verify determinism by asserting exact event ordering and store contents
-- Macro tests use `SwiftSyntaxMacrosTestSupport` for expansion assertions
 
 ## Key Conventions
 
@@ -132,9 +127,6 @@ TASK RECEIVED
 │  ├─ HiveConduit, HiveCheckpointWax, HiveRAGWax
 │  │  └─→ implementer (global agent, sonnet — adapter modules are thin)
 │  │
-│  ├─ HiveMacrosImpl/
-│  │  └─→ swift-god (global agent, opus — macros need deep Swift knowledge)
-│  │
 │  └─ Unclear / cross-cutting
 │     └─→ context-builder first → then re-route
 │
@@ -171,7 +163,6 @@ TASK RECEIVED
 | Add checkpoint feature | hive-runtime-dev | hive-spec-oracle | /hive-verify |
 | New channel type | hive-schema-store-dev | hive-spec-oracle | /hive-schema |
 | DSL enhancement | hive-dsl-dev | hive-test-writer | /hive-workflow |
-| Macro improvement | swift-god (global) | hive-test-writer | — |
 | Code review | swift-code-reviewer | hive-spec-oracle | /hive-verify |
 | New integration adapter | implementer (global) | hive-test-writer | /hive-test |
 

@@ -103,6 +103,9 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
 
         let normalizedProjection = outputProjection.normalized()
         try validateOutputProjection(normalizedProjection, registry: registry)
+        if let missing = registry.firstMissingRequiredCodecID() {
+            throw HiveCompilationError.missingRequiredCodec(channelID: missing)
+        }
 
         var edgesByFrom: [HiveNodeID: [HiveNodeID]] = [:]
         for edge in staticEdges {
