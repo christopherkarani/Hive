@@ -1,19 +1,36 @@
+/// Composable flags for node execution behavior.
+public struct HiveNodeOptions: OptionSet, Sendable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+
+    /// Run after all non-deferred frontier nodes complete in the current superstep.
+    /// Useful for cleanup, finalization, and summary nodes.
+    /// Deferred nodes execute only when the graph would otherwise finish (empty next frontier).
+    public static let deferred = HiveNodeOptions(rawValue: 1 << 0)
+}
+
 /// Compiled node configuration used by the runtime.
 public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
     public let id: HiveNodeID
     public let retryPolicy: HiveRetryPolicy
     public let runWhen: HiveNodeRunWhen
+    public let options: HiveNodeOptions
+    public let cachePolicy: HiveCachePolicy<Schema>?
     public let run: HiveNode<Schema>
 
     public init(
         id: HiveNodeID,
         retryPolicy: HiveRetryPolicy,
         runWhen: HiveNodeRunWhen = .always,
+        options: HiveNodeOptions = [],
+        cachePolicy: HiveCachePolicy<Schema>? = nil,
         run: @escaping HiveNode<Schema>
     ) {
         self.id = id
         self.retryPolicy = retryPolicy
         self.runWhen = runWhen.normalized
+        self.options = options
+        self.cachePolicy = cachePolicy
         self.run = run
     }
 }
@@ -73,10 +90,15 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         _ id: HiveNodeID,
         retryPolicy: HiveRetryPolicy = .none,
         runWhen: HiveNodeRunWhen = .always,
+        options: HiveNodeOptions = [],
+        cachePolicy: HiveCachePolicy<Schema>? = nil,
         _ node: @escaping HiveNode<Schema>
     ) {
         nodeInsertions.append(id)
-        nodes[id] = HiveCompiledNode(id: id, retryPolicy: retryPolicy, runWhen: runWhen, run: node)
+        nodes[id] = HiveCompiledNode(
+            id: id, retryPolicy: retryPolicy, runWhen: runWhen,
+            options: options, cachePolicy: cachePolicy, run: node
+        )
     }
 
     public mutating func addEdge(from: HiveNodeID, to: HiveNodeID) {

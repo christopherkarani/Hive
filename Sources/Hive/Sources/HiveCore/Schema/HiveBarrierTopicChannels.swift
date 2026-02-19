@@ -179,7 +179,7 @@ public extension HiveReducer {
     ) -> HiveReducer<HiveTopicChannelValue<TopicValue>>
     where Value == HiveTopicChannelValue<TopicValue>, TopicValue: Sendable & Codable {
         // Defensive normalization: invalid configuration should not crash the process.
-        let normalizedMaxValuesPerTopic = max(1, maxValuesPerTopic)
+        let normalizedMaxValuesPerTopic = Swift.max(1, maxValuesPerTopic)
         return HiveReducer<HiveTopicChannelValue<TopicValue>> { current, update in
             func extractState(_ value: HiveTopicChannelValue<TopicValue>) -> HiveTopicState<TopicValue> {
                 switch value {

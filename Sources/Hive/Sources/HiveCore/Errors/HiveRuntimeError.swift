@@ -19,6 +19,7 @@ public enum HiveRuntimeError: Error, Sendable {
     case checkpointCorrupt(field: String, errorDescription: String)
     case interruptPending(interruptID: HiveInterruptID)
     case noCheckpointToResume
+    case checkpointNotFound(id: HiveCheckpointID)
     case noInterruptToResume
     case resumeInterruptMismatch(expected: HiveInterruptID, found: HiveInterruptID)
 

@@ -3,6 +3,33 @@ public extension HiveReducer {
     static func lastWriteWins() -> HiveReducer<Value> {
         HiveReducer { _, update in update }
     }
+
+    /// Combines current and update using a caller-supplied binary operator.
+    /// Equivalent to LangGraph's `BinaryOperatorAggregate`.
+    static func binaryOp(
+        _ op: @escaping @Sendable (Value, Value) -> Value
+    ) -> HiveReducer<Value> {
+        HiveReducer { current, update in op(current, update) }
+    }
+}
+
+public extension HiveReducer where Value: Numeric & Sendable {
+    /// Accumulates updates by addition. Common for counters and running totals.
+    static func sum() -> HiveReducer<Value> {
+        HiveReducer { current, update in current + update }
+    }
+}
+
+public extension HiveReducer where Value: Comparable & Sendable {
+    /// Retains the lesser of current and update.
+    static func min() -> HiveReducer<Value> {
+        HiveReducer { current, update in Swift.min(current, update) }
+    }
+
+    /// Retains the greater of current and update.
+    static func max() -> HiveReducer<Value> {
+        HiveReducer { current, update in Swift.max(current, update) }
+    }
 }
 
 public extension HiveReducer where Value: RangeReplaceableCollection {
