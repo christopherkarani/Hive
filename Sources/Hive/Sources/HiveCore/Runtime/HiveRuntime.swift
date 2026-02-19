@@ -351,7 +351,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     private func makeFreshThreadState(for _: HiveThreadID) throws -> ThreadState<Schema> {
         let runID = HiveRunID(UUID())
         let global = try HiveGlobalStore(registry: registry, initialCache: initialCache)
-        let joinSeen = Dictionary(uniqueKeysWithValues: graph.joinEdges.map { ($0.id, Set<HiveNodeID>()) })
+        let joinSeen = Dictionary(
+            uniqueKeysWithValues: graph.joinEdges.map {
+                ($0.id, HiveBitset(wordCount: graph.joinBitsetWordCount))
+            }
+        )
         return ThreadState(
             runID: runID,
             stepIndex: 0,
@@ -564,7 +568,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             )
         }
 
-        var joinSeenParents: [String: Set<HiveNodeID>] = [:]
+        var joinSeenParents: [String: HiveBitset] = [:]
         joinSeenParents.reserveCapacity(graph.joinEdges.count)
         for edge in graph.joinEdges {
             guard let seenParents = checkpoint.joinBarrierSeenByJoinID[edge.id] else {
@@ -591,7 +595,19 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 }
                 previous = parent
             }
-            joinSeenParents[edge.id] = Set(seenParents.map(HiveNodeID.init))
+
+            var seenMask = HiveBitset(wordCount: graph.joinBitsetWordCount)
+            for parent in seenParents {
+                let parentID = HiveNodeID(parent)
+                guard let ordinal = graph.nodeOrdinalByID[parentID] else {
+                    throw HiveRuntimeError.checkpointCorrupt(
+                        field: "joinBarrierSeenByJoinID",
+                        errorDescription: "unknown parent \(parent)"
+                    )
+                }
+                seenMask.insert(ordinal)
+            }
+            joinSeenParents[edge.id] = seenMask
         }
 
         var channelVersionsByChannelID: [HiveChannelID: UInt64] = [:]
@@ -1622,9 +1638,16 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         var joinBarrierSeenByJoinID: [String: [String]] = [:]
         joinBarrierSeenByJoinID.reserveCapacity(graph.joinEdges.count)
         for edge in graph.joinEdges {
-            let seen = state.joinSeenParents[edge.id] ?? []
-            let sorted = seen.sorted { HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue) }
-            joinBarrierSeenByJoinID[edge.id] = sorted.map(\.rawValue)
+            let seenMask = state.joinSeenParents[edge.id] ?? HiveBitset(wordCount: graph.joinBitsetWordCount)
+            var sortedParents: [String] = []
+            sortedParents.reserveCapacity(edge.parents.count)
+            for parent in edge.parents {
+                guard let ordinal = graph.nodeOrdinalByID[parent] else { continue }
+                if seenMask.contains(ordinal) {
+                    sortedParents.append(parent.rawValue)
+                }
+            }
+            joinBarrierSeenByJoinID[edge.id] = sortedParents
         }
 
         var channelVersionsByChannelID: [String: UInt64] = [:]
@@ -2463,24 +2486,54 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
         var joinSeen = state.joinSeenParents
         var joinSeedKeys: Set<SeedKey> = []
+        var completedNodesMask = HiveBitset(wordCount: graph.joinBitsetWordCount)
         for task in tasks {
-            for edge in graph.joinEdges where edge.target == task.nodeID {
-                let parentsSet = Set(edge.parents)
-                if joinSeen[edge.id] == parentsSet {
-                    joinSeen[edge.id] = []
+            if let ordinal = graph.nodeOrdinalByID[task.nodeID] {
+                completedNodesMask.insert(ordinal)
+            }
+        }
+
+        for task in tasks {
+            for edge in graph.joinEdgesByTarget[task.nodeID] ?? [] {
+                guard let parentMask = graph.joinParentMaskByJoinID[edge.id] else { continue }
+                if joinSeen[edge.id] == parentMask {
+                    joinSeen[edge.id] = HiveBitset(wordCount: graph.joinBitsetWordCount)
                 }
             }
         }
 
-        for edge in graph.joinEdges {
-            let parentsSet = Set(edge.parents)
-            let wasAvailable = (joinSeen[edge.id] == parentsSet)
-            var seen = joinSeen[edge.id] ?? []
-            for task in tasks where parentsSet.contains(task.nodeID) {
-                seen.insert(task.nodeID)
+        var affectedJoinIDs: Set<String> = []
+        affectedJoinIDs.reserveCapacity(tasks.count)
+        for task in tasks {
+            for edge in graph.joinEdgesByParent[task.nodeID] ?? [] {
+                affectedJoinIDs.insert(edge.id)
+            }
+        }
+
+        var affectedEdges: [HiveJoinEdge] = []
+        affectedEdges.reserveCapacity(affectedJoinIDs.count)
+        for joinID in affectedJoinIDs {
+            guard let edge = graph.joinEdgeByID[joinID] else { continue }
+            affectedEdges.append(edge)
+        }
+        affectedEdges.sort { lhs, rhs in
+            let left = graph.joinEdgeOrderByID[lhs.id] ?? 0
+            let right = graph.joinEdgeOrderByID[rhs.id] ?? 0
+            return left < right
+        }
+
+        for edge in affectedEdges {
+            guard let parentMask = graph.joinParentMaskByJoinID[edge.id] else { continue }
+            let wasAvailable = (joinSeen[edge.id] == parentMask)
+            var seen = joinSeen[edge.id] ?? HiveBitset(wordCount: graph.joinBitsetWordCount)
+            for parent in edge.parents {
+                guard let ordinal = graph.nodeOrdinalByID[parent] else { continue }
+                if completedNodesMask.contains(ordinal) {
+                    seen.insert(ordinal)
+                }
             }
             joinSeen[edge.id] = seen
-            let isAvailable = (seen == parentsSet)
+            let isAvailable = (seen == parentMask)
             if !wasAvailable && isAvailable {
                 let seed = HiveTaskSeed<Schema>(nodeID: edge.target)
                 nextGraphSeeds.append(seed)
@@ -2781,7 +2834,7 @@ private struct ThreadState<Schema: HiveSchema>: Sendable {
     var global: HiveGlobalStore<Schema>
     var frontier: [HiveFrontierTask<Schema>]
     var deferredFrontier: [HiveFrontierTask<Schema>]
-    var joinSeenParents: [String: Set<HiveNodeID>]
+    var joinSeenParents: [String: HiveBitset]
     var interruption: HiveInterrupt<Schema>?
     var latestCheckpointID: HiveCheckpointID?
     var channelVersionsByChannelID: [HiveChannelID: UInt64]
@@ -2807,7 +2860,7 @@ private struct CommitResult<Schema: HiveSchema>: Sendable {
     let global: HiveGlobalStore<Schema>
     let frontier: [HiveFrontierTask<Schema>]
     let deferredFrontier: [HiveFrontierTask<Schema>]
-    let joinSeenParents: [String: Set<HiveNodeID>]
+    let joinSeenParents: [String: HiveBitset]
     let writtenGlobalChannels: [HiveChannelID]
 }
 
