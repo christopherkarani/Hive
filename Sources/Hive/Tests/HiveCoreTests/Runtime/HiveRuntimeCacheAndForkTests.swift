@@ -194,8 +194,8 @@ func testGetState_CheckpointFallback() async throws {
                 reducer: HiveReducer { _, u in u },
                 updatePolicy: .multi,
                 initial: { 0 },
-                persistence: .checkpointed,
-                codec: AnyHiveCodec(IntCodec2(id: "val"))
+                codec: HiveAnyCodec(IntCodec2(id: "val")),
+                persistence: .checkpointed
             )
             return [AnyHiveChannelSpec(spec)]
         }
@@ -368,8 +368,8 @@ func testEphemeralChannel_ResetsAfterSuperstep() async throws {
             next: .useGraphEdges
         )
     }
-    builder.addNode(HiveNodeID("B")) { input in
-        let seen = (try? input.get(ephKey)) ?? -999
+        builder.addNode(HiveNodeID("B")) { input in
+        let seen = (try? input.store.get(ephKey)) ?? -999
         return HiveNodeOutput(
             writes: [AnyHiveWrite(accumKey, seen)],
             next: .end
@@ -404,8 +404,8 @@ func testFork_RunsFromCheckpointToCompletion() async throws {
                 reducer: HiveReducer { cur, u in cur + u },
                 updatePolicy: .multi,
                 initial: { 0 },
-                persistence: .checkpointed,
-                codec: AnyHiveCodec(IntCodec2(id: "steps"))
+                codec: HiveAnyCodec(IntCodec2(id: "steps")),
+                persistence: .checkpointed
             )
             return [AnyHiveChannelSpec(spec)]
         }

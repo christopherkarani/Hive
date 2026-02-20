@@ -13,7 +13,7 @@ Hive runs agent workflows as deterministic superstep graphs. Same input, same ou
 - **Agent-ready** — Tool calling, bounded agent loops, streaming tokens, fan-out/join patterns, and hybrid inference (on-device + cloud).
 - **Resumable** — Interrupt a workflow for human approval. Checkpoint state. Resume with typed payloads. No lost context.
 
-## 30-Second Example
+ ## 30-Second Example
 
 A workflow that classifies input and branches to different handlers:
 

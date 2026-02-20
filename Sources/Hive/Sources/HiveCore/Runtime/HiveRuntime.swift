@@ -1749,7 +1749,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             channelVersionsByChannelID: nextState.channelVersionsByChannelID,
             versionsSeenByNodeID: nextState.versionsSeenByNodeID
         )
-        nextState.deferredFrontier = commitResult.deferredFrontier
+        nextState.deferredFrontier = state.deferredFrontier + commitResult.deferredFrontier
 
         let selectedInterrupt = try selectInterrupt(tasks: tasks, outputs: outputs)
         var checkpointToSave: HiveCheckpoint<Schema>?
