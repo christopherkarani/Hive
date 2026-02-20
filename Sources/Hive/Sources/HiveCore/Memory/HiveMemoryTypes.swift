@@ -6,14 +6,14 @@ public struct HiveMemoryItem: Sendable, Codable, Equatable {
     public let key: String
     public let text: String
     public let metadata: [String: String]
-    public let score: Float?
+    public let score: Double?
 
     public init(
         namespace: [String],
         key: String,
         text: String,
         metadata: [String: String] = [:],
-        score: Float? = nil
+        score: Double? = nil
     ) {
         self.namespace = namespace
         self.key = key

@@ -47,7 +47,7 @@ struct HiveInvertedIndex: Sendable {
         }
     }
 
-    func query(terms: [String], limit: Int) -> [(docID: String, score: Float)] {
+    func query(terms: [String], limit: Int) -> [(docID: String, score: Double)] {
         guard limit > 0 else { return [] }
         guard totalDocs > 0 else { return [] }
         guard terms.isEmpty == false else { return [] }
@@ -82,7 +82,7 @@ struct HiveInvertedIndex: Sendable {
                 return lhs.value > rhs.value
             }
             .prefix(limit)
-            .map { (docID: $0.key, score: Float($0.value)) }
+            .map { (docID: $0.key, score: $0.value) }
     }
 
     static func tokenize(_ text: String) -> [String] {

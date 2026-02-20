@@ -3,6 +3,43 @@ import Testing
 
 @Suite("HiveBitset")
 struct HiveBitsetTests {
+    @Test("wordCount 0 produces empty bitset")
+    func wordCountZeroProducesEmptyBitset() {
+        let bitset = HiveBitset(wordCount: 0)
+        #expect(bitset.isEmpty)
+        // Out-of-bounds insert is a no-op
+        var mutable = bitset
+        mutable.insert(0)
+        #expect(mutable.isEmpty)
+        #expect(mutable.contains(0) == false)
+    }
+
+    @Test("insert out-of-bounds is a no-op")
+    func insertOutOfBoundsIsNoOp() {
+        var bitset = HiveBitset(bitCapacity: 64)
+        bitset.insert(64)   // one past the end of a 1-word bitset
+        bitset.insert(100)
+        bitset.insert(-1)
+        #expect(bitset.isEmpty)
+    }
+
+    @Test("contains out-of-bounds returns false")
+    func containsOutOfBoundsReturnsFalse() {
+        var bitset = HiveBitset(bitCapacity: 64)
+        bitset.insert(0)
+        #expect(bitset.contains(64) == false)
+        #expect(bitset.contains(-1) == false)
+    }
+
+    @Test("bitCapacity 0 produces single-word bitset via init")
+    func bitCapacityZeroProducesSingleWord() {
+        // init(bitCapacity:) clamps to at least 1 word (64 bits)
+        var bitset = HiveBitset(bitCapacity: 0)
+        bitset.insert(0)
+        #expect(bitset.contains(0))
+    }
+
+
     @Test("insert/contains work across 64-bit word boundaries")
     func insertContainsAcrossWordBoundaries() {
         var bitset = HiveBitset(bitCapacity: 130)

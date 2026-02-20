@@ -73,8 +73,10 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
 
     /// LRU cache with a time-to-live. Entries older than `ttl` are invalidated.
     public static func lruTTL(maxEntries: Int = 128, ttl: Duration) -> HiveCachePolicy<Schema> {
-        let ttlNs = UInt64(ttl.components.seconds) * 1_000_000_000
-            + UInt64(max(0, ttl.components.attoseconds / 1_000_000_000))
+        // Cap seconds at ~292 years before converting to avoid UInt64 overflow.
+        let cappedSeconds = min(UInt64(max(0, ttl.components.seconds)), 9_000_000_000)
+        let subSecondNs = UInt64(ttl.components.attoseconds / 1_000_000_000)
+        let ttlNs = cappedSeconds &* 1_000_000_000 &+ subSecondNs
         return HiveCachePolicy(
             maxEntries: maxEntries,
             ttlNanoseconds: ttlNs,
@@ -117,7 +119,7 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
             hasher.update(data: Data(id.rawValue.utf8))
             // Best-effort: encode to data if codec available, else use channel ID only.
             if let value = try? store.valueAny(for: id),
-               let data = try? JSONEncoder().encode(AnySendableWrapper(value)) {
+               let data = try? _sharedCacheKeyEncoder.encode(AnySendableWrapper(value)) {
                 hasher.update(data: data)
             }
         }
@@ -143,6 +145,9 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
 }
 
 // MARK: - Internal helpers
+
+/// Shared encoder used for cache key hashing — avoids per-call allocation.
+private let _sharedCacheKeyEncoder = JSONEncoder()
 
 /// Thin `Encodable` wrapper for `any Sendable` — used only in cache key hashing.
 private struct AnySendableWrapper: Encodable {
@@ -171,7 +176,10 @@ struct HiveNodeCache<Schema: HiveSchema>: Sendable {
     ) -> HiveNodeOutput<Schema>? {
         guard let index = entries.firstIndex(where: { $0.key == key }) else { return nil }
         let entry = entries[index]
-        if let expiry = entry.expiresAt, nowNanoseconds > expiry { return nil }
+        if let expiry = entry.expiresAt, nowNanoseconds > expiry {
+            entries.remove(at: index)
+            return nil
+        }
         accessOrder &+= 1
         entries[index].lastUsedOrder = accessOrder
         return entry.output
