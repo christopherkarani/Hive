@@ -79,7 +79,7 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
         let activeFramesByKey = await latestActiveFramesByKey(in: nsString)
         let queryWords = query.lowercased().split(separator: " ").map(String.init)
 
-        var results: [(item: HiveMemoryItem, score: Float, frameID: UInt64)] = []
+        var results: [(item: HiveMemoryItem, score: Double, frameID: UInt64)] = []
 
         for (itemKey, frame) in activeFramesByKey {
             let payload = try await wax.frameContent(frameId: frame.id)
@@ -89,7 +89,7 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
             let matchCount = queryWords.filter { textLower.contains($0) }.count
             guard matchCount > 0 else { continue }
 
-            let score = Float(matchCount) / Float(max(queryWords.count, 1))
+            let score = Double(matchCount) / Double(max(queryWords.count, 1))
             let userMeta = extractUserMetadata(from: frame)
 
             results.append((

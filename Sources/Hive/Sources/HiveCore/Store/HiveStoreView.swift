@@ -30,4 +30,19 @@ public struct HiveStoreView<Schema: HiveSchema>: Sendable {
             return try access.cast(initialValue, for: key, spec: spec)
         }
     }
+
+    /// Type-erased read for a channel by ID. Returns the global value for global-scoped channels
+    /// or the task-local overlay (falling back to the initial value) for task-local channels.
+    func valueAny(for id: HiveChannelID) throws -> any Sendable {
+        let spec = try access.requireSpec(for: id)
+        switch spec.scope {
+        case .global:
+            return try global.valueAny(for: id)
+        case .taskLocal:
+            if let overlay = taskLocal.valueAny(for: id) {
+                return overlay
+            }
+            return try initialCache.valueAny(for: id)
+        }
+    }
 }

@@ -1,19 +1,36 @@
+/// Composable flags for node execution behavior.
+public struct HiveNodeOptions: OptionSet, Sendable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+
+    /// Run after all non-deferred frontier nodes complete in the current superstep.
+    /// Useful for cleanup, finalization, and summary nodes.
+    /// Deferred nodes execute only when the graph would otherwise finish (empty next frontier).
+    public static let deferred = HiveNodeOptions(rawValue: 1 << 0)
+}
+
 /// Compiled node configuration used by the runtime.
 public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
     public let id: HiveNodeID
     public let retryPolicy: HiveRetryPolicy
     public let runWhen: HiveNodeRunWhen
+    public let options: HiveNodeOptions
+    public let cachePolicy: HiveCachePolicy<Schema>?
     public let run: HiveNode<Schema>
 
     public init(
         id: HiveNodeID,
         retryPolicy: HiveRetryPolicy,
         runWhen: HiveNodeRunWhen = .always,
+        options: HiveNodeOptions = [],
+        cachePolicy: HiveCachePolicy<Schema>? = nil,
         run: @escaping HiveNode<Schema>
     ) {
         self.id = id
         self.retryPolicy = retryPolicy
         self.runWhen = runWhen.normalized
+        self.options = options
+        self.cachePolicy = cachePolicy
         self.run = run
     }
 }
@@ -53,6 +70,15 @@ public struct CompiledHiveGraph<Schema: HiveSchema>: Sendable {
     public let staticEdgesByFrom: [HiveNodeID: [HiveNodeID]]
     public let joinEdges: [HiveJoinEdge]
     public let routersByFrom: [HiveNodeID: HiveRouter<Schema>]
+    let nodeOrdinalByID: [HiveNodeID: Int]
+    let joinEdgeByID: [String: HiveJoinEdge]
+    let joinEdgeOrderByID: [String: Int]
+    let joinEdgesByTarget: [HiveNodeID: [HiveJoinEdge]]
+    let joinEdgesByParent: [HiveNodeID: [HiveJoinEdge]]
+    let joinParentMaskByJoinID: [String: HiveBitset]
+    let joinBitsetWordCount: Int
+    let staticLayersByNodeID: [HiveNodeID: Int]
+    let maxStaticDepth: Int
 }
 
 /// Builder for assembling and compiling graphs.
@@ -73,10 +99,15 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         _ id: HiveNodeID,
         retryPolicy: HiveRetryPolicy = .none,
         runWhen: HiveNodeRunWhen = .always,
+        options: HiveNodeOptions = [],
+        cachePolicy: HiveCachePolicy<Schema>? = nil,
         _ node: @escaping HiveNode<Schema>
     ) {
         nodeInsertions.append(id)
-        nodes[id] = HiveCompiledNode(id: id, retryPolicy: retryPolicy, runWhen: runWhen, run: node)
+        nodes[id] = HiveCompiledNode(
+            id: id, retryPolicy: retryPolicy, runWhen: runWhen,
+            options: options, cachePolicy: cachePolicy, run: node
+        )
     }
 
     public mutating func addEdge(from: HiveNodeID, to: HiveNodeID) {
@@ -116,6 +147,35 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         }
 
         let compiledJoinEdges = joinEdges.map { HiveJoinEdge(parents: $0.parents, target: $0.target) }
+        let sortedNodeIDs = nodes.keys.sorted { HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue) }
+        let nodeOrdinalByID = Dictionary(uniqueKeysWithValues: zip(sortedNodeIDs, sortedNodeIDs.indices))
+        let joinBitsetWordCount = max((sortedNodeIDs.count + 63) / 64, 1)
+
+        var joinEdgeByID: [String: HiveJoinEdge] = [:]
+        var joinEdgeOrderByID: [String: Int] = [:]
+        var joinEdgesByTarget: [HiveNodeID: [HiveJoinEdge]] = [:]
+        var joinEdgesByParent: [HiveNodeID: [HiveJoinEdge]] = [:]
+        var joinParentMaskByJoinID: [String: HiveBitset] = [:]
+
+        joinEdgeByID.reserveCapacity(compiledJoinEdges.count)
+        joinEdgeOrderByID.reserveCapacity(compiledJoinEdges.count)
+        joinParentMaskByJoinID.reserveCapacity(compiledJoinEdges.count)
+        for (index, edge) in compiledJoinEdges.enumerated() {
+            joinEdgeByID[edge.id] = edge
+            joinEdgeOrderByID[edge.id] = index
+            joinEdgesByTarget[edge.target, default: []].append(edge)
+
+            var parentMask = HiveBitset(wordCount: joinBitsetWordCount)
+            for parent in edge.parents {
+                if let ordinal = nodeOrdinalByID[parent] {
+                    parentMask.insert(ordinal)
+                }
+                joinEdgesByParent[parent, default: []].append(edge)
+            }
+            joinParentMaskByJoinID[edge.id] = parentMask
+        }
+
+        let staticLayerAnalysis = try computeStaticLayers()
 
         let schemaVersion = HiveVersioning.schemaVersion(registry: registry)
         let graphVersion = graphVersionOverride ?? HiveVersioning.graphVersion(
@@ -136,7 +196,16 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
             staticEdgesInOrder: staticEdgesInOrder,
             staticEdgesByFrom: edgesByFrom,
             joinEdges: compiledJoinEdges,
-            routersByFrom: routersByFrom
+            routersByFrom: routersByFrom,
+            nodeOrdinalByID: nodeOrdinalByID,
+            joinEdgeByID: joinEdgeByID,
+            joinEdgeOrderByID: joinEdgeOrderByID,
+            joinEdgesByTarget: joinEdgesByTarget,
+            joinEdgesByParent: joinEdgesByParent,
+            joinParentMaskByJoinID: joinParentMaskByJoinID,
+            joinBitsetWordCount: joinBitsetWordCount,
+            staticLayersByNodeID: staticLayerAnalysis.layersByNodeID,
+            maxStaticDepth: staticLayerAnalysis.maxDepth
         )
     }
 
@@ -315,5 +384,74 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
                 }
             }
         }
+    }
+
+    private func computeStaticLayers() throws -> (layersByNodeID: [HiveNodeID: Int], maxDepth: Int) {
+        var inDegreeByNode: [HiveNodeID: Int] = [:]
+        var outgoingByNode: [HiveNodeID: [HiveNodeID]] = [:]
+        inDegreeByNode.reserveCapacity(nodes.count)
+        outgoingByNode.reserveCapacity(nodes.count)
+
+        for nodeID in nodes.keys {
+            inDegreeByNode[nodeID] = 0
+            outgoingByNode[nodeID] = []
+        }
+
+        for edge in staticEdges {
+            outgoingByNode[edge.from, default: []].append(edge.to)
+            inDegreeByNode[edge.to, default: 0] += 1
+        }
+
+        for (nodeID, neighbors) in outgoingByNode {
+            outgoingByNode[nodeID] = neighbors.sorted {
+                HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue)
+            }
+        }
+
+        var frontier = inDegreeByNode
+            .filter { $0.value == 0 }
+            .map(\.key)
+            .sorted { HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue) }
+        var remainingInDegree = inDegreeByNode
+        var maxParentDepthByNode: [HiveNodeID: Int] = [:]
+        var layersByNodeID: [HiveNodeID: Int] = [:]
+        layersByNodeID.reserveCapacity(nodes.count)
+        var visitedCount = 0
+
+        while frontier.isEmpty == false {
+            var nextFrontier: [HiveNodeID] = []
+            for nodeID in frontier {
+                visitedCount += 1
+                let depth = maxParentDepthByNode[nodeID] ?? 0
+                layersByNodeID[nodeID] = depth
+
+                for neighbor in outgoingByNode[nodeID] ?? [] {
+                    let candidateDepth = depth + 1
+                    if candidateDepth > (maxParentDepthByNode[neighbor] ?? 0) {
+                        maxParentDepthByNode[neighbor] = candidateDepth
+                    }
+                    guard let currentInDegree = remainingInDegree[neighbor] else { continue }
+                    let nextInDegree = currentInDegree - 1
+                    remainingInDegree[neighbor] = nextInDegree
+                    if nextInDegree == 0 {
+                        nextFrontier.append(neighbor)
+                    }
+                }
+            }
+
+            frontier = nextFrontier.sorted {
+                HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue)
+            }
+        }
+
+        if visitedCount != nodes.count {
+            let cycleNodes = remainingInDegree
+                .filter { $0.value > 0 }
+                .map(\.key)
+                .sorted { HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue) }
+            throw HiveCompilationError.staticGraphCycleDetected(nodes: cycleNodes)
+        }
+
+        return (layersByNodeID: layersByNodeID, maxDepth: layersByNodeID.values.max() ?? 0)
     }
 }

@@ -3,6 +3,7 @@ import Foundation
 /// In-memory implementation of ``HiveMemoryStore`` for testing.
 public actor InMemoryHiveMemoryStore: HiveMemoryStore {
     private var storage: [String: HiveMemoryItem] = [:]
+    private var indexesByNamespace: [String: HiveInvertedIndex] = [:]
 
     public init() {}
 
@@ -10,9 +11,19 @@ public actor InMemoryHiveMemoryStore: HiveMemoryStore {
         (namespace + [key]).joined(separator: "/")
     }
 
+    private func namespaceKey(_ namespace: [String]) -> String {
+        namespace.joined(separator: "/")
+    }
+
     public func remember(namespace: [String], key: String, text: String, metadata: [String: String]) async throws {
+        let nsKey = namespaceKey(namespace)
+        let docID = storageKey(namespace: namespace, key: key)
         let item = HiveMemoryItem(namespace: namespace, key: key, text: text, metadata: metadata, score: nil)
-        storage[storageKey(namespace: namespace, key: key)] = item
+        storage[docID] = item
+
+        var index = indexesByNamespace[nsKey] ?? HiveInvertedIndex()
+        index.upsert(docID: docID, text: text)
+        indexesByNamespace[nsKey] = index
     }
 
     public func get(namespace: [String], key: String) async throws -> HiveMemoryItem? {
@@ -20,31 +31,41 @@ public actor InMemoryHiveMemoryStore: HiveMemoryStore {
     }
 
     public func recall(namespace: [String], query: String, limit: Int) async throws -> [HiveMemoryItem] {
-        let prefix = namespace.joined(separator: "/") + "/"
-        let queryWords = query.lowercased().split(separator: " ").map(String.init)
+        let nsKey = namespaceKey(namespace)
+        guard let index = indexesByNamespace[nsKey] else { return [] }
 
-        var results: [(item: HiveMemoryItem, score: Float)] = []
-        for (key, item) in storage {
-            guard key.hasPrefix(prefix) else { continue }
-            let textLower = item.text.lowercased()
-            let matchCount = queryWords.filter { textLower.contains($0) }.count
-            if matchCount > 0 {
-                let score = Float(matchCount) / Float(max(queryWords.count, 1))
-                results.append((item: HiveMemoryItem(
+        let prefix = namespace.joined(separator: "/") + "/"
+        let queryTerms = HiveInvertedIndex.tokenize(query)
+        let ranked = index.query(terms: queryTerms, limit: limit)
+        var results: [HiveMemoryItem] = []
+        results.reserveCapacity(ranked.count)
+        for entry in ranked {
+            guard entry.docID.hasPrefix(prefix) else { continue }
+            guard let item = storage[entry.docID] else { continue }
+            results.append(
+                HiveMemoryItem(
                     namespace: item.namespace,
                     key: item.key,
                     text: item.text,
                     metadata: item.metadata,
-                    score: score
-                ), score: score))
-            }
+                    score: entry.score
+                )
+            )
         }
-
-        results.sort { $0.score > $1.score }
-        return Array(results.prefix(limit).map(\.item))
+        return results
     }
 
     public func delete(namespace: [String], key: String) async throws {
-        storage.removeValue(forKey: storageKey(namespace: namespace, key: key))
+        let nsKey = namespaceKey(namespace)
+        let docID = storageKey(namespace: namespace, key: key)
+        storage.removeValue(forKey: docID)
+
+        guard var index = indexesByNamespace[nsKey] else { return }
+        index.remove(docID: docID)
+        if index.totalDocs == 0 {
+            indexesByNamespace.removeValue(forKey: nsKey)
+        } else {
+            indexesByNamespace[nsKey] = index
+        }
     }
 }

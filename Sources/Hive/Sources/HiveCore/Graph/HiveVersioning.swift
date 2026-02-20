@@ -207,6 +207,7 @@ enum HiveVersioning {
         switch persistence {
         case .checkpointed: return 0
         case .untracked: return 1
+        case .ephemeral: return 2
         }
     }
 

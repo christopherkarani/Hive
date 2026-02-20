@@ -8,6 +8,17 @@ public enum HiveChannelScope: Sendable {
 public enum HiveChannelPersistence: Sendable {
     case checkpointed
     case untracked
+    /// Value resets to `initial()` at the start of each superstep.
+    /// Distinct from `.untracked` (which skips checkpointing but keeps the value).
+    case ephemeral
+}
+
+extension HiveChannelPersistence {
+    /// `true` for channels whose value is reset to `initial()` at the start of the next superstep.
+    public var resetsAfterStep: Bool {
+        if case .ephemeral = self { return true }
+        return false
+    }
 }
 
 /// Defines how multiple writes to the same channel are handled.

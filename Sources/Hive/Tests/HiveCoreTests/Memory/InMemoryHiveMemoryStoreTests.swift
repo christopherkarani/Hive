@@ -67,4 +67,36 @@ struct InMemoryHiveMemoryStoreTests {
         let item = try await anyStore.get(namespace: ["ns"], key: "k1")
         #expect(item?.text == "through wrapper")
     }
+
+    @Test func recallRanksMoreRelevantDocumentFirst() async throws {
+        let store = InMemoryHiveMemoryStore()
+        try await store.remember(namespace: ["docs"], key: "d1", text: "swift actors swift", metadata: [:])
+        try await store.remember(namespace: ["docs"], key: "d2", text: "swift", metadata: [:])
+
+        let results = try await store.recall(namespace: ["docs"], query: "swift actors", limit: 10)
+        #expect(results.count == 2)
+        #expect(results[0].key == "d1")
+        #expect(results[0].score != nil)
+        #expect(results[1].score != nil)
+        #expect((results[0].score ?? 0) > (results[1].score ?? 0))
+    }
+
+    @Test func recallUsesDeterministicTieBreakByKey() async throws {
+        let store = InMemoryHiveMemoryStore()
+        try await store.remember(namespace: ["docs"], key: "a", text: "swift actors", metadata: [:])
+        try await store.remember(namespace: ["docs"], key: "b", text: "swift actors", metadata: [:])
+
+        let results = try await store.recall(namespace: ["docs"], query: "swift actors", limit: 10)
+        #expect(results.count == 2)
+        #expect(results.map(\.key) == ["a", "b"])
+        #expect(results[0].score == results[1].score)
+    }
+
+    @Test func recallEmptyQueryReturnsNoResults() async throws {
+        let store = InMemoryHiveMemoryStore()
+        try await store.remember(namespace: ["docs"], key: "d1", text: "swift actors", metadata: [:])
+
+        let results = try await store.recall(namespace: ["docs"], query: "   ", limit: 10)
+        #expect(results.isEmpty)
+    }
 }

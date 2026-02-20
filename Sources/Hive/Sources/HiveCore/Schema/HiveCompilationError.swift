@@ -18,6 +18,7 @@ public enum HiveCompilationError: Error, Sendable {
     case unknownJoinParent(parent: HiveNodeID, target: HiveNodeID)
     case unknownJoinTarget(target: HiveNodeID)
     case duplicateJoinEdge(joinID: String)
+    case staticGraphCycleDetected(nodes: [HiveNodeID])
     case outputProjectionUnknownChannel(HiveChannelID)
     case outputProjectionIncludesTaskLocal(HiveChannelID)
     case invalidNodeRunWhenChannelsEmpty(nodeID: HiveNodeID)
