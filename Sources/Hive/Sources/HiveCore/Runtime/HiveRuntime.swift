@@ -181,7 +181,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             return HiveStateSnapshot(
                 store: state.global,
                 checkpoint: nil,
-                nextNodes: state.frontier.map(\.seed.nodeID),
+                nextNodes: deduplicatedNextNodes(from: state.frontier),
                 stepIndex: state.stepIndex
             )
         }
@@ -200,9 +200,18 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         return HiveStateSnapshot(
             store: state.global,
             checkpoint: summary,
-            nextNodes: state.frontier.map(\.seed.nodeID),
+            nextNodes: deduplicatedNextNodes(from: state.frontier),
             stepIndex: state.stepIndex
         )
+    }
+
+    /// Returns deduplicated, lexicographically sorted node IDs from a frontier.
+    /// A node can appear multiple times in the frontier (scheduled by both a router and a static
+    /// edge). `nextNodes` must deduplicate for a consistent API contract.
+    private func deduplicatedNextNodes(from frontier: [HiveFrontierTask<Schema>]) -> [HiveNodeID] {
+        Array(Set(frontier.map(\.seed.nodeID))).sorted {
+            HiveOrdering.lexicographicallyPrecedes($0.rawValue, $1.rawValue)
+        }
     }
 
     /// Forks a new thread from any historical checkpoint.
@@ -695,8 +704,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
         emitter.emit(kind: .runStarted(threadID: threadID), stepIndex: nil, taskOrdinal: nil)
 
-        var stepsExecutedThisAttempt = 0
-
         do {
             try validateRunOptions(options)
             switch options.checkpointPolicy {
@@ -751,142 +758,16 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             }
             threadStates[threadID] = state
 
-            while true {
-                if Task.isCancelled {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .cancelled(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                if state.frontier.isEmpty {
-                    if !state.deferredFrontier.isEmpty {
-                        state.frontier = state.deferredFrontier
-                        state.deferredFrontier = []
-                        threadStates[threadID] = state
-                        continue
-                    }
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .finished(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                // Enforce maxSteps before emitting stepStarted for the next step.
-                // Out-of-steps completes with runFinished; the reason is visible only via the outcome.
-                if stepsExecutedThisAttempt == options.maxSteps {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .outOfSteps(maxSteps: options.maxSteps, output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                let stepOutcome = try await executeStep(
-                    state: state,
-                    threadID: threadID,
-                    attemptID: attemptID,
-                    options: options,
-                    emitter: emitter,
-                    resume: nil
-                )
-
-                var nextState = stepOutcome.nextState
-                if let checkpoint = stepOutcome.checkpointToSave {
-                    // Interrupt checkpointing is atomic: no publish and no commit-scoped events unless save succeeds.
-                    guard let store = environment.checkpointStore else {
-                        throw HiveRuntimeError.checkpointStoreMissing
-                    }
-                    try await store.save(checkpoint)
-                    nextState.latestCheckpointID = checkpoint.id
-                }
-
-                state = nextState
-                threadStates[threadID] = nextState
-                stepsExecutedThisAttempt += 1
-
-                if !stepOutcome.writtenGlobalChannels.isEmpty {
-                    for channelID in stepOutcome.writtenGlobalChannels {
-                        let payloadHash = try payloadHash(for: channelID, in: state.global)
-                        emitter.emit(
-                            kind: .writeApplied(channelID: channelID, payloadHash: payloadHash),
-                            stepIndex: state.stepIndex - 1,
-                            taskOrdinal: nil,
-                            metadata: try writeAppliedMetadata(
-                                for: channelID,
-                                in: state.global,
-                                debugPayloads: options.debugPayloads
-                            )
-                        )
-                    }
-                }
-
-                if stepOutcome.dropped.droppedModelTokenEvents > 0 || stepOutcome.dropped.droppedDebugEvents > 0 {
-                    emitter.emit(
-                        kind: .streamBackpressure(
-                            droppedModelTokenEvents: stepOutcome.dropped.droppedModelTokenEvents,
-                            droppedDebugEvents: stepOutcome.dropped.droppedDebugEvents
-                        ),
-                        stepIndex: state.stepIndex - 1,
-                        taskOrdinal: nil
-                    )
-                }
-
-                if let checkpoint = stepOutcome.checkpointToSave {
-                    emitter.emit(
-                        kind: .checkpointSaved(checkpointID: checkpoint.id),
-                        stepIndex: state.stepIndex - 1,
-                        taskOrdinal: nil
-                    )
-                }
-
-                try emitStreamingEvents(
-                    mode: options.streamingMode,
-                    state: state,
-                    writtenChannels: stepOutcome.writtenGlobalChannels,
-                    debugPayloads: options.debugPayloads,
-                    stepIndex: state.stepIndex - 1,
-                    emitter: emitter
-                )
-
-                emitter.emit(
-                    kind: .stepFinished(stepIndex: state.stepIndex - 1, nextFrontierCount: state.frontier.count),
-                    stepIndex: state.stepIndex - 1,
-                    taskOrdinal: nil
-                )
-
-                if let interrupt = stepOutcome.selectedInterrupt {
-                    // Interrupt is terminal for this attempt (even if next frontier is empty).
-                    let checkpointID = stepOutcome.checkpointToSave?.id ?? state.latestCheckpointID
-                    guard let checkpointID else {
-                        throw HiveRuntimeError.internalInvariantViolation(
-                            "Interrupted outcome requires a checkpoint ID."
-                        )
-                    }
-                    emitter.emit(kind: .runInterrupted(interruptID: interrupt.id), stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .interrupted(
-                        interruption: HiveInterruption(interrupt: interrupt, checkpointID: checkpointID)
-                    )
-                }
-
-                if state.frontier.isEmpty && state.deferredFrontier.isEmpty {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .finished(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                // Give the cancellation flag a fair observation point between committed steps.
-                await Task.yield()
-            }
+            return try await executeRunLoop(
+                initialState: state,
+                threadID: threadID,
+                options: options,
+                attemptID: attemptID,
+                emitter: emitter,
+                streamController: streamController
+            )
         } catch is RuntimeCancellation {
-            guard let state = threadStates[threadID] else {
-                throw RuntimeCancellation()
-            }
-            let output = try buildOutput(options: options, state: state)
-            emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
-            streamController.finish()
-            return .cancelled(output: output, checkpointID: state.latestCheckpointID)
+            throw RuntimeCancellation()
         } catch {
             streamController.finish(throwing: error)
             throw error
@@ -910,15 +791,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
         emitter.emit(kind: .runStarted(threadID: threadID), stepIndex: nil, taskOrdinal: nil)
 
-        var stepsExecutedThisAttempt = 0
-        var hasCommittedFirstResumedStep = false
-
         do {
             try validateRunOptions(options)
             try validateRetryPolicies()
             try validateRequiredCodecs()
 
-            var state = try await loadCheckpointStateForResume(
+            let state = try await loadCheckpointStateForResume(
                 threadID: threadID,
                 interruptID: interruptID,
                 debugPayloads: options.debugPayloads,
@@ -929,6 +807,109 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
             let resume = HiveResume<Schema>(interruptID: interruptID, payload: payload)
 
+            return try await executeRunLoop(
+                initialState: state,
+                threadID: threadID,
+                options: options,
+                attemptID: attemptID,
+                emitter: emitter,
+                streamController: streamController,
+                firstStepResume: resume,
+                clearInterruptionAfterFirstStep: true
+            )
+        } catch is RuntimeCancellation {
+            throw RuntimeCancellation()
+        } catch {
+            streamController.finish(throwing: error)
+            throw error
+        }
+    }
+
+    private func forkAttempt(
+        sourceThreadID: HiveThreadID,
+        fromCheckpointID: HiveCheckpointID,
+        newThreadID: HiveThreadID,
+        newRunID: HiveRunID,
+        options: HiveRunOptions,
+        attemptID: HiveRunAttemptID,
+        streamController: HiveEventStreamController
+    ) async throws -> HiveRunOutcome<Schema> {
+        let emitter = HiveEventEmitter(
+            runID: newRunID,
+            attemptID: attemptID,
+            streamController: streamController
+        )
+
+        emitter.emit(kind: .runStarted(threadID: newThreadID), stepIndex: nil, taskOrdinal: nil)
+
+        do {
+            try validateRunOptions(options)
+            try validateRetryPolicies()
+            try validateRequiredCodecs()
+
+            guard let store = environment.checkpointStore else {
+                throw HiveRuntimeError.checkpointStoreMissing
+            }
+            guard let checkpoint = try await store.loadCheckpoint(
+                threadID: sourceThreadID,
+                id: fromCheckpointID
+            ) else {
+                throw HiveRuntimeError.checkpointNotFound(id: fromCheckpointID)
+            }
+
+            var state = try decodeCheckpoint(checkpoint, debugPayloads: options.debugPayloads)
+            state.runID = newRunID
+            emitter.emit(kind: .checkpointLoaded(checkpointID: fromCheckpointID), stepIndex: nil, taskOrdinal: nil)
+            threadStates[newThreadID] = state
+
+            return try await executeRunLoop(
+                initialState: state,
+                threadID: newThreadID,
+                options: options,
+                attemptID: attemptID,
+                emitter: emitter,
+                streamController: streamController
+            )
+        } catch is RuntimeCancellation {
+            throw RuntimeCancellation()
+        } catch {
+            streamController.finish(throwing: error)
+            throw error
+        }
+    }
+
+    /// Shared run-loop extracted from `runAttempt`, `resumeAttempt`, and `forkAttempt`.
+    ///
+    /// Executes supersteps in a `while true` loop until the graph finishes, is interrupted,
+    /// runs out of steps, or is cancelled. Handles `RuntimeCancellation` internally (returns
+    /// `.cancelled`); all other errors propagate to the caller.
+    ///
+    /// - Parameters:
+    ///   - initialState: Thread state with frontier already populated.
+    ///   - threadID: The thread ID used for `threadStates[threadID] = state`.
+    ///   - options: Run options (maxSteps, checkpoint policy, streaming mode, etc.).
+    ///   - attemptID: Current attempt ID passed through to `executeStep`.
+    ///   - emitter: Event emitter for lifecycle events.
+    ///   - streamController: Stream controller to finish on terminal outcomes.
+    ///   - firstStepResume: If non-nil, passed to `executeStep` only on the first iteration
+    ///     (used by `resumeAttempt` to deliver the resume payload).
+    ///   - clearInterruptionAfterFirstStep: If `true`, clears `nextState.interruption` after
+    ///     the first step when no new interrupt was selected (used by `resumeAttempt`).
+    private func executeRunLoop(
+        initialState: ThreadState<Schema>,
+        threadID: HiveThreadID,
+        options: HiveRunOptions,
+        attemptID: HiveRunAttemptID,
+        emitter: HiveEventEmitter,
+        streamController: HiveEventStreamController,
+        firstStepResume: HiveResume<Schema>? = nil,
+        clearInterruptionAfterFirstStep: Bool = false
+    ) async throws -> HiveRunOutcome<Schema> {
+        var state = initialState
+        var stepsExecutedThisAttempt = 0
+        var firstStepDone = false
+
+        do {
             while true {
                 if Task.isCancelled {
                     let output = try buildOutput(options: options, state: state)
@@ -963,19 +944,19 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     attemptID: attemptID,
                     options: options,
                     emitter: emitter,
-                    resume: hasCommittedFirstResumedStep ? nil : resume
+                    resume: (!firstStepDone) ? firstStepResume : nil
                 )
 
                 var nextState = stepOutcome.nextState
 
-                // Clear the pending interruption only after the first successfully committed resumed step,
-                // unless a new interrupt is selected in that same commit.
-                if hasCommittedFirstResumedStep == false {
-                    hasCommittedFirstResumedStep = true
+                // For resumeAttempt: clear the pending interruption after the first successfully
+                // committed resumed step, unless a new interrupt is selected in that same commit.
+                if clearInterruptionAfterFirstStep && !firstStepDone {
                     if stepOutcome.selectedInterrupt == nil {
                         nextState.interruption = nil
                     }
                 }
+                firstStepDone = true
 
                 if let checkpoint = stepOutcome.checkpointToSave {
                     guard let store = environment.checkpointStore else {
@@ -1058,6 +1039,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     return .finished(output: output, checkpointID: state.latestCheckpointID)
                 }
 
+                // Give the cancellation flag a fair observation point between committed steps.
                 await Task.yield()
             }
         } catch is RuntimeCancellation {
@@ -1068,183 +1050,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
             streamController.finish()
             return .cancelled(output: output, checkpointID: state.latestCheckpointID)
-        } catch {
-            streamController.finish(throwing: error)
-            throw error
-        }
-    }
-
-    private func forkAttempt(
-        sourceThreadID: HiveThreadID,
-        fromCheckpointID: HiveCheckpointID,
-        newThreadID: HiveThreadID,
-        newRunID: HiveRunID,
-        options: HiveRunOptions,
-        attemptID: HiveRunAttemptID,
-        streamController: HiveEventStreamController
-    ) async throws -> HiveRunOutcome<Schema> {
-        let emitter = HiveEventEmitter(
-            runID: newRunID,
-            attemptID: attemptID,
-            streamController: streamController
-        )
-
-        emitter.emit(kind: .runStarted(threadID: newThreadID), stepIndex: nil, taskOrdinal: nil)
-
-        var stepsExecutedThisAttempt = 0
-
-        do {
-            try validateRunOptions(options)
-            try validateRetryPolicies()
-            try validateRequiredCodecs()
-
-            guard let store = environment.checkpointStore else {
-                throw HiveRuntimeError.checkpointStoreMissing
-            }
-            guard let checkpoint = try await store.loadCheckpoint(
-                threadID: sourceThreadID,
-                id: fromCheckpointID
-            ) else {
-                throw HiveRuntimeError.checkpointNotFound(id: fromCheckpointID)
-            }
-
-            var state = try decodeCheckpoint(checkpoint, debugPayloads: options.debugPayloads)
-            state.runID = newRunID
-            emitter.emit(kind: .checkpointLoaded(checkpointID: fromCheckpointID), stepIndex: nil, taskOrdinal: nil)
-            threadStates[newThreadID] = state
-
-            while true {
-                if Task.isCancelled {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .cancelled(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                if state.frontier.isEmpty {
-                    if !state.deferredFrontier.isEmpty {
-                        state.frontier = state.deferredFrontier
-                        state.deferredFrontier = []
-                        threadStates[newThreadID] = state
-                        continue
-                    }
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .finished(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                if stepsExecutedThisAttempt == options.maxSteps {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .outOfSteps(maxSteps: options.maxSteps, output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                let stepOutcome = try await executeStep(
-                    state: state,
-                    threadID: newThreadID,
-                    attemptID: attemptID,
-                    options: options,
-                    emitter: emitter,
-                    resume: nil
-                )
-
-                var nextState = stepOutcome.nextState
-                if let checkpoint = stepOutcome.checkpointToSave {
-                    guard let checkpointStore = environment.checkpointStore else {
-                        throw HiveRuntimeError.checkpointStoreMissing
-                    }
-                    try await checkpointStore.save(checkpoint)
-                    nextState.latestCheckpointID = checkpoint.id
-                }
-
-                state = nextState
-                threadStates[newThreadID] = nextState
-                stepsExecutedThisAttempt += 1
-
-                if !stepOutcome.writtenGlobalChannels.isEmpty {
-                    for channelID in stepOutcome.writtenGlobalChannels {
-                        let payloadHash = try payloadHash(for: channelID, in: state.global)
-                        emitter.emit(
-                            kind: .writeApplied(channelID: channelID, payloadHash: payloadHash),
-                            stepIndex: state.stepIndex - 1,
-                            taskOrdinal: nil,
-                            metadata: try writeAppliedMetadata(
-                                for: channelID,
-                                in: state.global,
-                                debugPayloads: options.debugPayloads
-                            )
-                        )
-                    }
-                }
-
-                if stepOutcome.dropped.droppedModelTokenEvents > 0 || stepOutcome.dropped.droppedDebugEvents > 0 {
-                    emitter.emit(
-                        kind: .streamBackpressure(
-                            droppedModelTokenEvents: stepOutcome.dropped.droppedModelTokenEvents,
-                            droppedDebugEvents: stepOutcome.dropped.droppedDebugEvents
-                        ),
-                        stepIndex: state.stepIndex - 1,
-                        taskOrdinal: nil
-                    )
-                }
-
-                if let checkpoint = stepOutcome.checkpointToSave {
-                    emitter.emit(
-                        kind: .checkpointSaved(checkpointID: checkpoint.id),
-                        stepIndex: state.stepIndex - 1,
-                        taskOrdinal: nil
-                    )
-                }
-
-                try emitStreamingEvents(
-                    mode: options.streamingMode,
-                    state: state,
-                    writtenChannels: stepOutcome.writtenGlobalChannels,
-                    debugPayloads: options.debugPayloads,
-                    stepIndex: state.stepIndex - 1,
-                    emitter: emitter
-                )
-
-                emitter.emit(
-                    kind: .stepFinished(stepIndex: state.stepIndex - 1, nextFrontierCount: state.frontier.count),
-                    stepIndex: state.stepIndex - 1,
-                    taskOrdinal: nil
-                )
-
-                if let interrupt = stepOutcome.selectedInterrupt {
-                    let checkpointID = stepOutcome.checkpointToSave?.id ?? state.latestCheckpointID
-                    guard let checkpointID else {
-                        throw HiveRuntimeError.internalInvariantViolation(
-                            "Interrupted outcome requires a checkpoint ID."
-                        )
-                    }
-                    emitter.emit(kind: .runInterrupted(interruptID: interrupt.id), stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .interrupted(interruption: HiveInterruption(interrupt: interrupt, checkpointID: checkpointID))
-                }
-
-                if state.frontier.isEmpty && state.deferredFrontier.isEmpty {
-                    let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
-                    streamController.finish()
-                    return .finished(output: output, checkpointID: state.latestCheckpointID)
-                }
-
-                await Task.yield()
-            }
-        } catch is RuntimeCancellation {
-            guard let state = threadStates[newThreadID] else {
-                throw RuntimeCancellation()
-            }
-            let output = try buildOutput(options: options, state: state)
-            emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
-            streamController.finish()
-            return .cancelled(output: output, checkpointID: state.latestCheckpointID)
-        } catch {
-            streamController.finish(throwing: error)
-            throw error
         }
     }
 
@@ -1767,12 +1572,26 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         var cachedResultsByTaskIndex: [Int: HiveNodeOutput<Schema>] = [:]
         for (index, task) in tasks.enumerated() {
             guard let node = graph.nodesByID[task.nodeID],
-                  let cachePolicy = node.cachePolicy,
-                  let cacheKey = try? cachePolicy.keyProvider.cacheKey(forNode: task.nodeID, store: cachePreStoreView)
+                  let cachePolicy = node.cachePolicy
             else { continue }
+            // Compute cache key — log failures instead of silently disabling caching.
+            let cacheKey: String
+            do {
+                cacheKey = try cachePolicy.keyProvider.cacheKey(forNode: task.nodeID, store: cachePreStoreView)
+            } catch {
+                environment.logger.debug(
+                    "Cache key computation failed for node \(task.nodeID.rawValue): \(error)",
+                    metadata: [:]
+                )
+                continue
+            }
             guard var nodeCache = state.nodeCaches[task.nodeID] else { continue }
-            guard let cachedOutput = nodeCache.lookup(key: cacheKey, policy: cachePolicy, nowNanoseconds: cacheNowNs)
-            else { continue }
+            let cachedOutput = nodeCache.lookup(key: cacheKey, policy: cachePolicy, nowNanoseconds: cacheNowNs)
+            // Always write back: persists LRU order update AND expired-entry removal to state.
+            // Without this writeback, HiveNodeCache is a value type whose mutations inside
+            // lookup() are silently discarded, breaking LRU eviction ordering.
+            state.nodeCaches[task.nodeID] = nodeCache
+            guard let cachedOutput else { continue }
             cachedResultsByTaskIndex[index] = cachedOutput
         }
 

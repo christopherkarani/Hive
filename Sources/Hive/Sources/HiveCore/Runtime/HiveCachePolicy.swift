@@ -62,11 +62,17 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
     /// LRU cache keyed by SHA-256 of all global channel version counters.
     /// Zero I/O overhead — uses version counters already maintained by the runtime.
     public static func lru(maxEntries: Int = 128) -> HiveCachePolicy<Schema> {
-        HiveCachePolicy(
+        // Capture sorted global specs at factory time — once, not per call.
+        // If registry construction fails the specs list is empty, producing a per-nodeID
+        // constant key rather than a store-content-aware key. This is a safe degradation
+        // (no cross-node collisions) but caching becomes less selective.
+        let sortedGlobalSpecs = (try? HiveSchemaRegistry<Schema>())?
+            .sortedChannelSpecs.filter { $0.scope == .global } ?? []
+        return HiveCachePolicy(
             maxEntries: maxEntries,
             ttlNanoseconds: nil,
             keyProvider: AnyHiveCacheKeyProvider { nodeID, store in
-                Self.versionBasedKey(nodeID: nodeID, store: store)
+                Self.versionBasedKey(nodeID: nodeID, store: store, sortedGlobalSpecs: sortedGlobalSpecs)
             }
         )
     }
@@ -77,11 +83,14 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
         let cappedSeconds = min(UInt64(max(0, ttl.components.seconds)), 9_000_000_000)
         let subSecondNs = UInt64(ttl.components.attoseconds / 1_000_000_000)
         let ttlNs = cappedSeconds &* 1_000_000_000 &+ subSecondNs
+        // Capture sorted global specs at factory time — same rationale as lru().
+        let sortedGlobalSpecs = (try? HiveSchemaRegistry<Schema>())?
+            .sortedChannelSpecs.filter { $0.scope == .global } ?? []
         return HiveCachePolicy(
             maxEntries: maxEntries,
             ttlNanoseconds: ttlNs,
             keyProvider: AnyHiveCacheKeyProvider { nodeID, store in
-                Self.versionBasedKey(nodeID: nodeID, store: store)
+                Self.versionBasedKey(nodeID: nodeID, store: store, sortedGlobalSpecs: sortedGlobalSpecs)
             }
         )
     }
@@ -103,9 +112,13 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
 
     // MARK: - Key helpers
 
-    private static func versionBasedKey(nodeID: HiveNodeID, store: HiveStoreView<Schema>) -> String {
+    private static func versionBasedKey(
+        nodeID: HiveNodeID,
+        store: HiveStoreView<Schema>,
+        sortedGlobalSpecs: [AnyHiveChannelSpec<Schema>]
+    ) -> String {
         // Use nodeID as salt so two different nodes with identical state produce different keys.
-        nodeID.rawValue + ":" + storeHashKey(store: store)
+        nodeID.rawValue + ":" + storeHashKey(store: store, sortedGlobalSpecs: sortedGlobalSpecs)
     }
 
     private static func channelSubsetKey(
@@ -127,17 +140,19 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
     }
 
     /// Hashes the store's current values via best-effort JSON encoding.
-    private static func storeHashKey(store: HiveStoreView<Schema>) -> String {
+    /// `sortedGlobalSpecs` must be pre-computed at factory time (not per call) to avoid
+    /// per-invocation registry construction and the silent-empty-hash failure mode.
+    private static func storeHashKey(
+        store: HiveStoreView<Schema>,
+        sortedGlobalSpecs: [AnyHiveChannelSpec<Schema>]
+    ) -> String {
         var hasher = SHA256()
-        // Iterate all channels in stable order and hash what we can encode.
-        if let registry = try? HiveSchemaRegistry<Schema>() {
-            for spec in registry.sortedChannelSpecs where spec.scope == .global {
-                hasher.update(data: Data(spec.id.rawValue.utf8))
-                if let encodeBox = spec._encodeBox,
-                   let value = try? store.valueAny(for: spec.id),
-                   let encoded = try? encodeBox(value) {
-                    hasher.update(data: encoded)
-                }
+        for spec in sortedGlobalSpecs {
+            hasher.update(data: Data(spec.id.rawValue.utf8))
+            if let encodeBox = spec._encodeBox,
+               let value = try? store.valueAny(for: spec.id),
+               let encoded = try? encodeBox(value) {
+                hasher.update(data: encoded)
             }
         }
         return hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
