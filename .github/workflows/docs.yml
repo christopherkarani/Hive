@@ -1,0 +1,83 @@
+name: Documentation
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: website/package-lock.json
+
+      - name: Build Docusaurus
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+
+      - name: Build DocC
+        run: |
+          swift package generate-documentation \
+            --target Hive \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path Hive/api \
+            --output-path docc-out
+
+          swift package generate-documentation \
+            --target HiveCore \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path Hive/api/hivecore \
+            --output-path docc-out/hivecore
+
+          swift package generate-documentation \
+            --target HiveDSL \
+            --disable-indexing \
+            --transform-for-static-hosting \
+            --hosting-base-path Hive/api/hivedsl \
+            --output-path docc-out/hivedsl
+
+      - name: Merge DocC into Docusaurus build
+        run: |
+          mkdir -p website/build/api
+          cp -R docc-out/* website/build/api/
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
