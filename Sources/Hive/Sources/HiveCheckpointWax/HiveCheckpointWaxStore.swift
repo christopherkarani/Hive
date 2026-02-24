@@ -66,7 +66,7 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointQueryable
 
         var best: (frameId: UInt64, stepIndex: Int)?
         for meta in metas {
-            guard meta.kind == Self.checkpointKind else { continue }
+            guard isActiveCurrentFrame(meta) else { continue }
             guard let metadata = meta.metadata?.entries else { continue }
             guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
             guard let stepString = metadata[HiveCheckpointWaxMetadataKey.stepIndex],
@@ -94,7 +94,7 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointQueryable
         results.reserveCapacity(metas.count)
 
         for meta in metas {
-            guard meta.kind == Self.checkpointKind else { continue }
+            guard isActiveCurrentFrame(meta) else { continue }
             guard let metadata = meta.metadata?.entries else { continue }
             guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
 
@@ -138,7 +138,7 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointQueryable
         let metas = await wax.frameMetas()
         var bestFrameID: UInt64?
         for meta in metas {
-            guard meta.kind == Self.checkpointKind else { continue }
+            guard isActiveCurrentFrame(meta) else { continue }
             guard let metadata = meta.metadata?.entries else { continue }
             guard metadata[HiveCheckpointWaxMetadataKey.threadID] == threadID.rawValue else { continue }
             guard metadata[HiveCheckpointWaxMetadataKey.checkpointID] == id.rawValue else { continue }
@@ -155,5 +155,17 @@ public actor HiveCheckpointWaxStore<Schema: HiveSchema>: HiveCheckpointQueryable
         guard let bestFrameID else { return nil }
         let payload = try await wax.frameContent(frameId: bestFrameID)
         return try decoder.decode(HiveCheckpoint<Schema>.self, from: payload)
+    }
+
+    private func isActiveCurrentFrame(_ meta: FrameMeta) -> Bool {
+        guard meta.kind == Self.checkpointKind else { return false }
+        guard meta.status == .active else { return false }
+        guard meta.supersededBy == nil else { return false }
+        return true
+    }
+
+    func _deleteFrameForTesting(frameID: UInt64) async throws {
+        try await wax.delete(frameId: frameID)
+        try await wax.commit()
     }
 }

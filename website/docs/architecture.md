@@ -28,7 +28,6 @@ HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 | `HiveConduit` | HiveCore, Conduit | LLM provider adapter |
 | `HiveCheckpointWax` | HiveCore, Wax | Persistent checkpoints |
 | `HiveRAGWax` | HiveCore, Wax | Vector RAG persistence |
-| `HiveSwiftAgents` | HiveCore | SwiftAgents compatibility |
 | `Hive` | All above | Umbrella re-export |
 
 Depend on `HiveCore` alone for zero external dependencies, or `Hive` for batteries-included.

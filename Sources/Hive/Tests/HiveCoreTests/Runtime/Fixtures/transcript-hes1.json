@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "HES1",
+  "events": [
+    {
+      "id": {
+        "runID": "current-run",
+        "attemptID": "current-attempt",
+        "eventIndex": 0,
+        "stepIndex": null,
+        "taskOrdinal": null
+      },
+      "kind": "run.started",
+      "fields": {
+        "threadID": "thread-current"
+      },
+      "metadata": {
+        "source": "fixture"
+      }
+    },
+    {
+      "id": {
+        "runID": "current-run",
+        "attemptID": "current-attempt",
+        "eventIndex": 1,
+        "stepIndex": null,
+        "taskOrdinal": null
+      },
+      "kind": "run.cancelled",
+      "fields": {
+        "cause": "explicitRequest"
+      },
+      "metadata": {
+        "source": "fixture"
+      }
+    }
+  ]
+}

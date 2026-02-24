@@ -51,6 +51,46 @@ private actor InMemoryCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
     func all() async -> [HiveCheckpoint<Schema>] { checkpoints }
 }
 
+private actor BlockingCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
+    private enum WaitError: Error {
+        case saveDidNotStartWithinTimeout
+    }
+
+    private var checkpoints: [HiveCheckpoint<Schema>] = []
+    private var saveStarted = false
+
+    func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
+        saveStarted = true
+        while true {
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>? {
+        checkpoints
+            .filter { $0.threadID == threadID }
+            .max { lhs, rhs in
+                if lhs.stepIndex == rhs.stepIndex { return lhs.id.rawValue < rhs.id.rawValue }
+                return lhs.stepIndex < rhs.stepIndex
+            }
+    }
+
+    func waitForSaveStart(timeoutNanoseconds: UInt64 = 15_000_000_000) async throws {
+        if saveStarted { return }
+
+        var elapsed: UInt64 = 0
+        while saveStarted == false {
+            if elapsed >= timeoutNanoseconds {
+                throw WaitError.saveDidNotStartWithinTimeout
+            }
+            try await Task.sleep(nanoseconds: 1_000_000)
+            elapsed += 1_000_000
+        }
+    }
+
+    func all() async -> [HiveCheckpoint<Schema>] { checkpoints }
+}
+
 private func makeEnvironment<Schema: HiveSchema>(
     context: Schema.Context,
     checkpointStore: AnyHiveCheckpointStore<Schema>? = nil
@@ -189,6 +229,151 @@ func testInterruptID_DerivedFromTaskID() async throws {
         }
         return false
     })
+}
+
+@Test("Resume fails typed when no checkpoint exists")
+func testResume_NoCheckpointToResume() async throws {
+    enum Schema: HiveSchema {
+        typealias InterruptPayload = String
+        typealias ResumePayload = String
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
+    }
+
+    let store = InMemoryCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
+    let graph = try builder.compile()
+
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+
+    let resumed = await runtime.resume(
+        threadID: HiveThreadID("resume-no-checkpoint"),
+        interruptID: HiveInterruptID("missing"),
+        payload: "go",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+
+    do {
+        _ = try await resumed.outcome.value
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .noCheckpointToResume:
+            #expect(Bool(true))
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
+    }
+}
+
+@Test("Resume fails typed when checkpoint has no pending interrupt")
+func testResume_NoInterruptToResume() async throws {
+    enum Schema: HiveSchema {
+        typealias InterruptPayload = String
+        typealias ResumePayload = String
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
+    }
+
+    let store = InMemoryCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
+    let graph = try builder.compile()
+
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+
+    let baseline = await runtime.run(
+        threadID: HiveThreadID("resume-no-interrupt"),
+        input: (),
+        options: HiveRunOptions(checkpointPolicy: .everyStep)
+    )
+    _ = try await baseline.outcome.value
+
+    let resumed = await runtime.resume(
+        threadID: HiveThreadID("resume-no-interrupt"),
+        interruptID: HiveInterruptID("unused"),
+        payload: "go",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+
+    do {
+        _ = try await resumed.outcome.value
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .noInterruptToResume:
+            #expect(Bool(true))
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
+    }
+}
+
+@Test("Resume fails typed on interrupt ID mismatch")
+func testResume_InterruptIDMismatch() async throws {
+    enum Schema: HiveSchema {
+        typealias InterruptPayload = String
+        typealias ResumePayload = String
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
+    }
+
+    let store = InMemoryCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in
+        HiveNodeOutput(next: .end, interrupt: HiveInterruptRequest(payload: "pause"))
+    }
+    let graph = try builder.compile()
+
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+
+    let initial = await runtime.run(
+        threadID: HiveThreadID("resume-mismatch-id"),
+        input: (),
+        options: HiveRunOptions(checkpointPolicy: .everyStep)
+    )
+    let interrupted = try await initial.outcome.value
+    guard case let .interrupted(interruption) = interrupted else {
+        #expect(Bool(false))
+        return
+    }
+
+    let wrongInterruptID = HiveInterruptID("wrong-id")
+    let resumed = await runtime.resume(
+        threadID: HiveThreadID("resume-mismatch-id"),
+        interruptID: wrongInterruptID,
+        payload: "go",
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+
+    do {
+        _ = try await resumed.outcome.value
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case let .resumeInterruptMismatch(expected, found):
+            #expect(expected == interruption.interrupt.id)
+            #expect(found == wrongInterruptID)
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
+    }
 }
 
 @Test("Resume clears interruption only after first committed step")
@@ -397,6 +582,89 @@ func testResume_VisibleOnlyFirstStep() async throws {
     #expect(try latest.get(logKey) == ["B:saw", "C:nil"])
 }
 
+@Test("Cold-start resume rebinds runID for newly persisted checkpoints")
+func testResume_ColdStartRestore_RebindsRunIDForNewCheckpoint() async throws {
+    enum Schema: HiveSchema {
+        typealias InterruptPayload = String
+        typealias ResumePayload = String
+
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+            let spec = HiveChannelSpec(
+                key: valueKey,
+                scope: .global,
+                reducer: HiveReducer.lastWriteWins(),
+                updatePolicy: .single,
+                initial: { 0 },
+                codec: HiveAnyCodec(IntCodec()),
+                persistence: .checkpointed
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+    let store = InMemoryCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in
+        HiveNodeOutput(
+            writes: [AnyHiveWrite(valueKey, 1)],
+            next: .useGraphEdges,
+            interrupt: HiveInterruptRequest(payload: "pause")
+        )
+    }
+    builder.addNode(HiveNodeID("B")) { _ in
+        HiveNodeOutput(writes: [AnyHiveWrite(valueKey, 2)], next: .end)
+    }
+    builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
+
+    let graph = try builder.compile()
+    let threadID = HiveThreadID("resume-cold-runid")
+
+    let runtime1 = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+    let initial = await runtime1.run(
+        threadID: threadID,
+        input: (),
+        options: HiveRunOptions(checkpointPolicy: .onInterrupt)
+    )
+    let initialOutcome = try await initial.outcome.value
+    guard case let .interrupted(interruption) = initialOutcome else {
+        #expect(Bool(false))
+        return
+    }
+
+    let checkpointsAfterInitial = await store.all()
+    #expect(checkpointsAfterInitial.count == 1)
+    let initialCheckpoint = try #require(checkpointsAfterInitial.max(by: { $0.stepIndex < $1.stepIndex }))
+    let firstRunID = initialCheckpoint.runID
+
+    let runtime2 = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+    let resumed = await runtime2.resume(
+        threadID: threadID,
+        interruptID: interruption.interrupt.id,
+        payload: "go",
+        options: HiveRunOptions(checkpointPolicy: .everyStep)
+    )
+    let resumedOutcome = try await resumed.outcome.value
+    guard case .finished = resumedOutcome else {
+        #expect(Bool(false))
+        return
+    }
+
+    let allCheckpoints = await store.all()
+    let latest = try #require(allCheckpoints.max(by: { $0.stepIndex < $1.stepIndex }))
+    #expect(latest.stepIndex == initialCheckpoint.stepIndex + 1)
+    #expect(latest.runID == resumed.runID)
+    #expect(latest.runID != firstRunID)
+}
+
 private struct IntCodec: HiveCodec {
     let id: String = "int.v1"
     func encode(_ value: Int) throws -> Data { withUnsafeBytes(of: value.bigEndian) { Data($0) } }
@@ -533,10 +801,12 @@ func testApplyExternalWrites_RejectsTaskLocalWrites() async throws {
     do {
         _ = try await handle.outcome.value
         #expect(Bool(false))
-    } catch let error as HiveRuntimeError {
+    } catch let error as HiveExternalWriteError {
         switch error {
-        case .taskLocalWriteNotAllowed:
-            #expect(Bool(true))
+        case .scopeMismatch(let channelID, let expected, let actual):
+            #expect(channelID == HiveChannelID("local"))
+            #expect(expected == .global)
+            #expect(actual == .taskLocal)
         default:
             #expect(Bool(false))
         }
@@ -554,4 +824,145 @@ func testApplyExternalWrites_RejectsTaskLocalWrites() async throws {
 
     let checkpoints = await store.all()
     #expect(checkpoints.isEmpty)
+}
+
+@Test("applyExternalWrites cancellation during checkpoint save yields cancelled with no commit")
+func testApplyExternalWrites_CancelDuringCheckpointSave_ReturnsCancelledNoCommit() async throws {
+    enum Schema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+            let spec = HiveChannelSpec(
+                key: valueKey,
+                scope: .global,
+                reducer: HiveReducer.lastWriteWins(),
+                updatePolicy: .multi,
+                initial: { 0 },
+                codec: HiveAnyCodec(IntCodec()),
+                persistence: .checkpointed
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+    let store = BlockingCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
+
+    let graph = try builder.compile()
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+
+    let handle = await runtime.applyExternalWrites(
+        threadID: HiveThreadID("ext-writes-cancel-save"),
+        writes: [AnyHiveWrite(valueKey, 1)],
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+
+    let eventsTask = Task { await collectEventsAndError(handle.events) }
+    try await store.waitForSaveStart()
+    handle.outcome.cancel()
+
+    let outcome = try await handle.outcome.value
+    let (events, streamError) = await eventsTask.value
+    #expect(streamError == nil)
+
+    guard case let .cancelled(output, checkpointID) = outcome else {
+        #expect(Bool(false))
+        return
+    }
+    #expect(checkpointID == nil)
+    if case let .fullStore(storeOutput) = output {
+        #expect(try storeOutput.get(valueKey) == 0)
+    } else {
+        #expect(Bool(false))
+    }
+
+    let checkpoints = await store.all()
+    #expect(checkpoints.isEmpty)
+    #expect(!events.contains { event in
+        if case .writeApplied = event.kind { return true }
+        if case .checkpointSaved = event.kind { return true }
+        if case .stepFinished = event.kind { return true }
+        return false
+    })
+    if let last = events.last {
+        guard case .runCancelled(let cause) = last.kind else {
+            #expect(Bool(false))
+            return
+        }
+        #expect(cause == .checkpointPersistenceRace)
+    } else {
+        #expect(Bool(false))
+    }
+}
+
+@Test("Cold-start applyExternalWrites rebinds runID for newly persisted checkpoints")
+func testApplyExternalWrites_ColdStartRestore_RebindsRunIDForNewCheckpoint() async throws {
+    enum Schema: HiveSchema {
+        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+            let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+            let spec = HiveChannelSpec(
+                key: valueKey,
+                scope: .global,
+                reducer: HiveReducer.lastWriteWins(),
+                updatePolicy: .multi,
+                initial: { 0 },
+                codec: HiveAnyCodec(IntCodec()),
+                persistence: .checkpointed
+            )
+            return [AnyHiveChannelSpec(spec)]
+        }
+    }
+
+    let valueKey = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
+    let store = InMemoryCheckpointStore<Schema>()
+
+    var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in
+        HiveNodeOutput(writes: [AnyHiveWrite(valueKey, 1)], next: .useGraphEdges)
+    }
+    builder.addNode(HiveNodeID("B")) { _ in
+        HiveNodeOutput(next: .end)
+    }
+    builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
+
+    let graph = try builder.compile()
+    let threadID = HiveThreadID("ext-writes-cold-runid")
+
+    let runtime1 = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+    let first = await runtime1.run(
+        threadID: threadID,
+        input: (),
+        options: HiveRunOptions(maxSteps: 1, checkpointPolicy: .everyStep)
+    )
+    _ = try await first.outcome.value
+
+    let checkpointsAfterFirstRun = await store.all()
+    #expect(checkpointsAfterFirstRun.count == 1)
+    let firstCheckpoint = try #require(checkpointsAfterFirstRun.max(by: { $0.stepIndex < $1.stepIndex }))
+    let firstRunID = firstCheckpoint.runID
+
+    let runtime2 = try HiveRuntime(
+        graph: graph,
+        environment: makeEnvironment(context: (), checkpointStore: AnyHiveCheckpointStore(store))
+    )
+    let external = await runtime2.applyExternalWrites(
+        threadID: threadID,
+        writes: [AnyHiveWrite(valueKey, 99)],
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    _ = try await external.outcome.value
+
+    let allCheckpoints = await store.all()
+    let latest = try #require(allCheckpoints.max(by: { $0.stepIndex < $1.stepIndex }))
+    #expect(latest.stepIndex == 2)
+    #expect(latest.runID == external.runID)
+    #expect(latest.runID != firstRunID)
 }

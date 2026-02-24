@@ -392,9 +392,8 @@ func testEphemeralChannel_ResetsAfterSuperstep() async throws {
 
 // MARK: - Fork from checkpoint
 
-/// `fork` must load a checkpoint, start a new run thread from that frontier, execute to
-/// completion, and produce a `.finished` outcome.
-@Test("fork runs a new thread from a historical checkpoint to completion")
+/// `fork` clones state into a new thread. Running that thread should continue independently.
+@Test("fork clones thread state from a historical checkpoint")
 func testFork_RunsFromCheckpointToCompletion() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
@@ -441,10 +440,18 @@ func testFork_RunsFromCheckpointToCompletion() async throws {
     let checkpointID = checkpoints[0].id
 
     // Fork from that checkpoint into a new thread.
-    let h2 = await runtime.fork(
+    let fork = try await runtime.fork(
         threadID: HiveThreadID("source"),
-        fromCheckpointID: checkpointID,
-        into: HiveThreadID("fork"),
+        to: HiveThreadID("fork"),
+        from: checkpointID,
+        options: HiveRunOptions(checkpointPolicy: .disabled)
+    )
+    #expect(fork.sourceCheckpointID == checkpointID)
+    #expect(fork.targetCheckpointID == nil)
+
+    let h2 = await runtime.run(
+        threadID: HiveThreadID("fork"),
+        input: (),
         options: HiveRunOptions(checkpointPolicy: .disabled)
     )
     let outcome = try await h2.outcome.value

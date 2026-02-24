@@ -16,8 +16,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     public func run(threadID:, input:, options:) -> HiveRunHandle<Schema>
     public func resume(threadID:, interruptID:, payload:, options:) -> HiveRunHandle<Schema>
-    public func fork(threadID:, fromCheckpointID:, into:, options:) -> HiveRunHandle<Schema>
-    public func getState(threadID:) -> HiveStateSnapshot<Schema>?
+    public func applyExternalWrites(threadID:, writes:, options:) -> HiveRunHandle<Schema>
+    public func validateRunOptions(_:) throws
+    public func checkpointCapabilities() -> HiveCheckpointStoreCapabilities
+    public func getCheckpointHistory(threadID:, limit:) async throws -> [HiveCheckpointSummary]
+    public func getCheckpoint(threadID:, id:) async throws -> HiveCheckpoint<Schema>?
+    public func fork(threadID:to:from:options:) async throws -> HiveForkResult<Schema>
+    public func getForkEventHistory(limit:) -> [HiveEvent]
+    public func getState(threadID:) async throws -> HiveRuntimeStateSnapshot<Schema>?
     public func getLatestStore(threadID:) -> HiveGlobalStore<Schema>?
 }
 ```
@@ -50,6 +56,22 @@ public struct HiveRunHandle<Schema: HiveSchema>: Sendable {
     public let outcome: Task<HiveRunOutcome<Schema>, Error>
 }
 ```
+
+`fork` is an atomic branch operation and returns `HiveForkResult` instead of `HiveRunHandle`.
+
+## Fork Contract
+
+- Source checkpoint:
+  - `from` provided: load exact checkpoint ID
+  - `from == nil`: load latest checkpoint for source thread
+- Target state clone preserves global values, frontier, deferred frontier, join barrier state,
+  interruption, channel versions, and versionsSeen.
+- Target lineage is independent: subsequent target runs/writes do not mutate source.
+- Persistence:
+  - `options?.checkpointPolicy != .disabled` saves a target checkpoint
+  - otherwise fork is in-memory only
+- Lifecycle events are emitted as `forkStarted`, `forkCompleted`, `forkFailed` and can be read via
+  `getForkEventHistory(limit:)`.
 
 ## HiveRunOutcome
 
@@ -104,7 +126,7 @@ Seeds are deduplicated by `(nodeID, taskLocalFingerprint)`.
 
 | Category | Events |
 |----------|--------|
-| Run lifecycle | `runStarted`, `runFinished`, `runInterrupted`, `runResumed`, `runCancelled` |
+| Run lifecycle | `runStarted`, `runFinished`, `runInterrupted`, `runResumed`, `runCancelled(cause)` |
 | Superstep | `stepStarted(stepIndex, frontierCount)`, `stepFinished(stepIndex, nextFrontierCount)` |
 | Task | `taskStarted(node, taskID)`, `taskFinished(node, taskID)`, `taskFailed(node, taskID, error)` |
 | Writes | `writeApplied(channelID, payloadHash)` |
@@ -128,6 +150,20 @@ Typed, filtered sub-streams:
 let views = HiveEventStreamViews(handle.events)
 for try await step in views.steps() { /* HiveStepEvent */ }
 for try await task in views.tasks() { /* HiveTaskEvent */ }
+```
+
+Each `HiveEvent` carries `schemaVersion` for replay compatibility checks.
+
+## Transcript + Replay
+
+Use `HiveEventTranscript` for canonical event projection, deterministic hashing, and first-diff diagnostics:
+
+```swift
+let transcript = HiveEventTranscript(events: events)
+let transcriptHash = try transcript.transcriptHash()
+let stateHash = HiveTranscriptHasher.finalStateHash(stateSnapshot: state)
+let diff = transcript.firstDiff(comparedTo: baseline)
+try transcript.validateReplayCompatibility(expected: .current)
 ```
 
 ## Retry Policies

@@ -41,8 +41,9 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
         }
 
         let data = Data(text.utf8)
+        let encodedNamespace = encodeNamespace(namespace)
         var metadataEntries: [String: String] = [
-            HiveRAGWaxMetadataKey.namespace: namespace.joined(separator: "/"),
+            HiveRAGWaxMetadataKey.namespace: encodedNamespace,
             HiveRAGWaxMetadataKey.key: key,
         ]
         for (k, v) in metadata {
@@ -75,7 +76,9 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
     }
 
     public func recall(namespace: [String], query: String, limit: Int) async throws -> [HiveMemoryItem] {
-        let nsString = namespace.joined(separator: "/")
+        guard limit > 0 else { return [] }
+
+        let nsString = encodeNamespace(namespace)
         let activeFramesByKey = await latestActiveFramesByKey(in: nsString)
         let queryWords = query.lowercased().split(separator: " ").map(String.init)
 
@@ -123,7 +126,7 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
     // MARK: - Private
 
     private func findLatestActiveFrame(namespace: [String], key: String) async -> FrameMeta? {
-        let nsString = namespace.joined(separator: "/")
+        let nsString = encodeNamespace(namespace)
         let framesByKey = await latestActiveFramesByKey(in: nsString)
         return framesByKey[key]
     }
@@ -163,5 +166,15 @@ public actor HiveRAGWaxStore: HiveMemoryStore {
             }
         }
         return result
+    }
+
+    private func encodeNamespace(_ namespace: [String]) -> String {
+        namespace.map(escapeNamespaceComponent).joined(separator: "/")
+    }
+
+    private func escapeNamespaceComponent(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "%", with: "%25")
+            .replacingOccurrences(of: "/", with: "%2F")
     }
 }

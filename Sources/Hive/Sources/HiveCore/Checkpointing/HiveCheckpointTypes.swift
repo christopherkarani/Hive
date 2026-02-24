@@ -1,5 +1,40 @@
 import Foundation
 
+/// Optional fork lineage metadata persisted alongside checkpoints.
+public struct HiveCheckpointLineage: Codable, Sendable, Equatable {
+    public let lineageID: String
+    public let sourceThreadID: HiveThreadID
+    public let sourceCheckpointID: HiveCheckpointID
+    public let targetThreadID: HiveThreadID
+    public let sourceRunID: HiveRunID
+    public let targetRunID: HiveRunID
+    public let schemaVersion: String
+    public let graphVersion: String
+    public let createdAtNanoseconds: UInt64
+
+    public init(
+        lineageID: String,
+        sourceThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID,
+        targetThreadID: HiveThreadID,
+        sourceRunID: HiveRunID,
+        targetRunID: HiveRunID,
+        schemaVersion: String,
+        graphVersion: String,
+        createdAtNanoseconds: UInt64
+    ) {
+        self.lineageID = lineageID
+        self.sourceThreadID = sourceThreadID
+        self.sourceCheckpointID = sourceCheckpointID
+        self.targetThreadID = targetThreadID
+        self.sourceRunID = sourceRunID
+        self.targetRunID = targetRunID
+        self.schemaVersion = schemaVersion
+        self.graphVersion = graphVersion
+        self.createdAtNanoseconds = createdAtNanoseconds
+    }
+}
+
 /// Stable identifier for a checkpoint.
 public struct HiveCheckpointID: Hashable, Codable, Sendable {
     public let rawValue: String
@@ -83,8 +118,10 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
     public let updatedChannelsLastCommit: [String]
     public let globalDataByChannelID: [String: Data]
     public let frontier: [HiveCheckpointTask]
+    public let deferredFrontier: [HiveCheckpointTask]
     public let joinBarrierSeenByJoinID: [String: [String]]
     public let interruption: HiveInterrupt<Schema>?
+    public let lineage: HiveCheckpointLineage?
 
     public init(
         id: HiveCheckpointID,
@@ -95,8 +132,10 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         graphVersion: String,
         globalDataByChannelID: [String: Data],
         frontier: [HiveCheckpointTask],
+        deferredFrontier: [HiveCheckpointTask] = [],
         joinBarrierSeenByJoinID: [String: [String]],
-        interruption: HiveInterrupt<Schema>?
+        interruption: HiveInterrupt<Schema>?,
+        lineage: HiveCheckpointLineage?
     ) {
         self.id = id
         self.threadID = threadID
@@ -110,8 +149,39 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         self.updatedChannelsLastCommit = []
         self.globalDataByChannelID = globalDataByChannelID
         self.frontier = frontier
+        self.deferredFrontier = deferredFrontier
         self.joinBarrierSeenByJoinID = joinBarrierSeenByJoinID
         self.interruption = interruption
+        self.lineage = lineage
+    }
+
+    public init(
+        id: HiveCheckpointID,
+        threadID: HiveThreadID,
+        runID: HiveRunID,
+        stepIndex: Int,
+        schemaVersion: String,
+        graphVersion: String,
+        globalDataByChannelID: [String: Data],
+        frontier: [HiveCheckpointTask],
+        deferredFrontier: [HiveCheckpointTask] = [],
+        joinBarrierSeenByJoinID: [String: [String]],
+        interruption: HiveInterrupt<Schema>?
+    ) {
+        self.init(
+            id: id,
+            threadID: threadID,
+            runID: runID,
+            stepIndex: stepIndex,
+            schemaVersion: schemaVersion,
+            graphVersion: graphVersion,
+            globalDataByChannelID: globalDataByChannelID,
+            frontier: frontier,
+            deferredFrontier: deferredFrontier,
+            joinBarrierSeenByJoinID: joinBarrierSeenByJoinID,
+            interruption: interruption,
+            lineage: nil
+        )
     }
 
     public init(
@@ -127,8 +197,10 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         updatedChannelsLastCommit: [String],
         globalDataByChannelID: [String: Data],
         frontier: [HiveCheckpointTask],
+        deferredFrontier: [HiveCheckpointTask] = [],
         joinBarrierSeenByJoinID: [String: [String]],
-        interruption: HiveInterrupt<Schema>?
+        interruption: HiveInterrupt<Schema>?,
+        lineage: HiveCheckpointLineage?
     ) {
         self.id = id
         self.threadID = threadID
@@ -142,8 +214,47 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         self.updatedChannelsLastCommit = updatedChannelsLastCommit
         self.globalDataByChannelID = globalDataByChannelID
         self.frontier = frontier
+        self.deferredFrontier = deferredFrontier
         self.joinBarrierSeenByJoinID = joinBarrierSeenByJoinID
         self.interruption = interruption
+        self.lineage = lineage
+    }
+
+    public init(
+        id: HiveCheckpointID,
+        threadID: HiveThreadID,
+        runID: HiveRunID,
+        stepIndex: Int,
+        schemaVersion: String,
+        graphVersion: String,
+        checkpointFormatVersion: String,
+        channelVersionsByChannelID: [String: UInt64],
+        versionsSeenByNodeID: [String: [String: UInt64]],
+        updatedChannelsLastCommit: [String],
+        globalDataByChannelID: [String: Data],
+        frontier: [HiveCheckpointTask],
+        deferredFrontier: [HiveCheckpointTask] = [],
+        joinBarrierSeenByJoinID: [String: [String]],
+        interruption: HiveInterrupt<Schema>?
+    ) {
+        self.init(
+            id: id,
+            threadID: threadID,
+            runID: runID,
+            stepIndex: stepIndex,
+            schemaVersion: schemaVersion,
+            graphVersion: graphVersion,
+            checkpointFormatVersion: checkpointFormatVersion,
+            channelVersionsByChannelID: channelVersionsByChannelID,
+            versionsSeenByNodeID: versionsSeenByNodeID,
+            updatedChannelsLastCommit: updatedChannelsLastCommit,
+            globalDataByChannelID: globalDataByChannelID,
+            frontier: frontier,
+            deferredFrontier: deferredFrontier,
+            joinBarrierSeenByJoinID: joinBarrierSeenByJoinID,
+            interruption: interruption,
+            lineage: nil
+        )
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -159,8 +270,10 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
         case updatedChannelsLastCommit
         case globalDataByChannelID
         case frontier
+        case deferredFrontier
         case joinBarrierSeenByJoinID
         case interruption
+        case lineage
     }
 
     public init(from decoder: Decoder) throws {
@@ -180,8 +293,10 @@ public struct HiveCheckpoint<Schema: HiveSchema>: Codable, Sendable {
 
         self.globalDataByChannelID = try container.decode([String: Data].self, forKey: .globalDataByChannelID)
         self.frontier = try container.decode([HiveCheckpointTask].self, forKey: .frontier)
+        self.deferredFrontier = try container.decodeIfPresent([HiveCheckpointTask].self, forKey: .deferredFrontier) ?? []
         self.joinBarrierSeenByJoinID = try container.decode([String: [String]].self, forKey: .joinBarrierSeenByJoinID)
         self.interruption = try container.decodeIfPresent(HiveInterrupt<Schema>.self, forKey: .interruption)
+        self.lineage = try container.decodeIfPresent(HiveCheckpointLineage.self, forKey: .lineage)
     }
 }
 
@@ -190,6 +305,30 @@ public protocol HiveCheckpointStore: Sendable {
     associatedtype Schema: HiveSchema
     func save(_ checkpoint: HiveCheckpoint<Schema>) async throws
     func loadLatest(threadID: HiveThreadID) async throws -> HiveCheckpoint<Schema>?
+}
+
+/// Discoverable capabilities for a configured checkpoint store.
+public struct HiveCheckpointStoreCapabilities: Sendable, Equatable {
+    public let supportsListCheckpoints: Bool
+    public let supportsLoadCheckpointByID: Bool
+
+    public init(
+        supportsListCheckpoints: Bool,
+        supportsLoadCheckpointByID: Bool
+    ) {
+        self.supportsListCheckpoints = supportsListCheckpoints
+        self.supportsLoadCheckpointByID = supportsLoadCheckpointByID
+    }
+
+    public static let none = HiveCheckpointStoreCapabilities(
+        supportsListCheckpoints: false,
+        supportsLoadCheckpointByID: false
+    )
+
+    public static let queryable = HiveCheckpointStoreCapabilities(
+        supportsListCheckpoints: true,
+        supportsLoadCheckpointByID: true
+    )
 }
 
 /// Optional checkpoint store capability: list and load checkpoints by identifier.
@@ -204,12 +343,14 @@ public struct AnyHiveCheckpointStore<Schema: HiveSchema>: Sendable {
     private let _loadLatest: @Sendable (HiveThreadID) async throws -> HiveCheckpoint<Schema>?
     private let _listCheckpoints: (@Sendable (HiveThreadID, Int?) async throws -> [HiveCheckpointSummary])?
     private let _loadCheckpoint: (@Sendable (HiveThreadID, HiveCheckpointID) async throws -> HiveCheckpoint<Schema>?)?
+    public let capabilities: HiveCheckpointStoreCapabilities
 
     public init<S: HiveCheckpointStore>(_ store: S) where S.Schema == Schema {
         self._save = store.save
         self._loadLatest = store.loadLatest
         self._listCheckpoints = nil
         self._loadCheckpoint = nil
+        self.capabilities = .none
     }
 
     public init<Q: HiveCheckpointQueryableStore>(_ store: Q) where Q.Schema == Schema {
@@ -221,6 +362,7 @@ public struct AnyHiveCheckpointStore<Schema: HiveSchema>: Sendable {
         self._loadCheckpoint = { threadID, checkpointID in
             try await store.loadCheckpoint(threadID: threadID, id: checkpointID)
         }
+        self.capabilities = .queryable
     }
 
     public func save(_ checkpoint: HiveCheckpoint<Schema>) async throws {
@@ -235,7 +377,9 @@ public struct AnyHiveCheckpointStore<Schema: HiveSchema>: Sendable {
         threadID: HiveThreadID,
         limit: Int? = nil
     ) async throws -> [HiveCheckpointSummary] {
-        guard let _listCheckpoints else { throw HiveCheckpointQueryError.unsupported }
+        guard let _listCheckpoints else {
+            throw HiveCheckpointQueryError.unsupported(operation: .listCheckpoints)
+        }
         return try await _listCheckpoints(threadID, limit)
     }
 
@@ -243,7 +387,9 @@ public struct AnyHiveCheckpointStore<Schema: HiveSchema>: Sendable {
         threadID: HiveThreadID,
         id: HiveCheckpointID
     ) async throws -> HiveCheckpoint<Schema>? {
-        guard let _loadCheckpoint else { throw HiveCheckpointQueryError.unsupported }
+        guard let _loadCheckpoint else {
+            throw HiveCheckpointQueryError.unsupported(operation: .loadCheckpointByID)
+        }
         return try await _loadCheckpoint(threadID, id)
     }
 }

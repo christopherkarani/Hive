@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import HiveCheckpointWax
+@testable import HiveCheckpointWax
 
 private enum TestSchema: HiveSchema {
     static var channelSpecs: [AnyHiveChannelSpec<Self>] { [] }
@@ -137,4 +137,46 @@ func hiveCheckpointWaxStoreLoadLatestPersistsAcrossReopen() async throws {
     #expect(loaded?.id.rawValue == expected.id.rawValue)
     #expect(loaded?.runID.rawValue == expected.runID.rawValue)
     #expect(loaded?.stepIndex == expected.stepIndex)
+}
+
+@Test("HiveCheckpointWaxStore query APIs skip deleted frames")
+func hiveCheckpointWaxStoreQueriesSkipDeletedFrames() async throws {
+    let url = try makeTempWaxURL()
+    let store = try await HiveCheckpointWaxStore<TestSchema>.create(at: url)
+    let threadID = HiveThreadID("thread-deleted")
+
+    let older = makeCheckpoint(
+        id: "older-active",
+        threadID: threadID,
+        runID: UUID(uuidString: "00000000-0000-0000-0000-000000000031")!,
+        stepIndex: 1
+    )
+    let newer = makeCheckpoint(
+        id: "newer-to-delete",
+        threadID: threadID,
+        runID: UUID(uuidString: "00000000-0000-0000-0000-000000000032")!,
+        stepIndex: 2
+    )
+
+    try await store.save(older)
+    try await store.save(newer)
+
+    let beforeDelete = try await store.listCheckpoints(threadID: threadID, limit: nil)
+    #expect(beforeDelete.map(\.id.rawValue) == ["newer-to-delete", "older-active"])
+    guard let backendID = beforeDelete.first?.backendID,
+          let frameID = UInt64(backendID) else {
+        Issue.record("Expected backendID for newest checkpoint")
+        return
+    }
+
+    try await store._deleteFrameForTesting(frameID: frameID)
+
+    let latest = try await store.loadLatest(threadID: threadID)
+    #expect(latest?.id.rawValue == "older-active")
+
+    let listed = try await store.listCheckpoints(threadID: threadID, limit: nil)
+    #expect(listed.map(\.id.rawValue) == ["older-active"])
+
+    let deletedLookup = try await store.loadCheckpoint(threadID: threadID, id: newer.id)
+    #expect(deletedLookup == nil)
 }

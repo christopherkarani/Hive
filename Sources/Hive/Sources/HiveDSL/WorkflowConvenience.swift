@@ -1,9 +1,9 @@
 import Foundation
 
-// MARK: - SwiftAgents-Style Shims
+// MARK: - Keyword-Escaping Shims
 
 public extension Branch {
-    /// SwiftAgents-style spelling of `Branch.case(...)` without backticks.
+    /// Spelling of `Branch.case(...)` that avoids reserved keyword escaping at call sites.
     static func when(
         name: String,
         _ condition: @escaping @Sendable (HiveStoreView<Schema>) -> Bool,
@@ -12,7 +12,7 @@ public extension Branch {
         Self.`case`(name: name, when: condition, body)
     }
 
-    /// SwiftAgents-style spelling of `Branch.default { ... }` without backticks.
+    /// Spelling of `Branch.default { ... }` that avoids reserved keyword escaping at call sites.
     static func otherwise(
         @EffectsBuilder<Schema> _ body: @escaping @Sendable () -> HiveNodeOutput<Schema>
     ) -> Item {
@@ -28,7 +28,7 @@ public enum FanOutCompilationError: Error, Sendable, Equatable {
 
 /// Declares a fan-out from a node to multiple targets, optionally followed by a join.
 ///
-/// This is a convenience wrapper around `Edge` + `Join` for SwiftAgents-style "parallel" wiring.
+/// This is a convenience wrapper around `Edge` + `Join` for parallel fan-out wiring.
 public struct FanOut<Schema: HiveSchema>: WorkflowComponent, Sendable {
     private let from: HiveNodeID
     private let targets: [HiveNodeID]
@@ -94,4 +94,3 @@ public struct SequenceEdges<Schema: HiveSchema>: WorkflowComponent, Sendable {
         }
     }
 }
-

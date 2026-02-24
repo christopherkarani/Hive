@@ -121,6 +121,22 @@ let outcome = try await handle.outcome.value
 Checkpoint/resume flow:
 - Provide a `HiveCheckpointStore` in `HiveEnvironment` and enable a checkpoint policy in `HiveRunOptions`.
 - On `.interrupted`, resume with `runtime.resume(threadID:interruptID:payload:options:)` using the provided `HiveInterruptID`.
+- `HiveRuntime.validateRunOptions(_:)` is available as a public preflight API and is used by `run`, `resume`, and `applyExternalWrites`.
+
+## Runtime State Snapshot
+Use `getState(threadID:)` for a typed deterministic state snapshot:
+
+```swift
+let state = try await runtime.getState(threadID: HiveThreadID("thread-1"))
+```
+
+`HiveRuntimeStateSnapshot` includes:
+- `threadID`, `runID`, `stepIndex`
+- interruption metadata (`interruptID` + payload hash)
+- `checkpointID`
+- `globalChannelPayloadHashesByID`
+- `frontierSummary` for deterministic comparisons
+- typed `store` projection for channel reads
 
 ## Checkpoint Inspection
 Some checkpoint stores support optional history and load-by-id operations.
@@ -131,7 +147,26 @@ let history = try await runtime.getCheckpointHistory(threadID: HiveThreadID("thr
 let checkpoint = try await runtime.getCheckpoint(threadID: HiveThreadID("thread-1"), id: history[0].id)
 ```
 
-If the configured store does not support query operations, these calls throw `HiveCheckpointQueryError.unsupported`.
+Use `runtime.checkpointCapabilities()` to discover query support.
+If the configured store does not support query operations, these calls throw typed unsupported errors:
+- `HiveCheckpointQueryError.unsupported(operation: .listCheckpoints)`
+- `HiveCheckpointQueryError.unsupported(operation: .loadCheckpointByID)`
+
+## Transcript + Hash Utilities
+Use `HiveEventTranscript` and `HiveTranscriptHasher` for deterministic replay checks:
+
+```swift
+let transcript = HiveEventTranscript(events: events)
+let transcriptHash = try transcript.transcriptHash()
+let stateHash = HiveTranscriptHasher.finalStateHash(stateSnapshot: state)
+let diff = transcript.firstDiff(comparedTo: baseline)
+```
+
+`HiveEventTranscript` normalizes volatile identifiers by default so seeded repeated runs can be compared across attempts.
+
+## Event Schema Versioning
+Every event carries `HiveEvent.schemaVersion` (`HiveEventSchemaVersion`), and replay compatibility can be validated with:
+- `HiveEventTranscript.validateReplayCompatibility(expected:)`
 
 ## Stream Views
 `HiveEventStreamViews` provides typed, filtered views over a `HiveEvent` stream.

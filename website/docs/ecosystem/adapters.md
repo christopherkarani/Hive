@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Adapter Modules
-description: HiveConduit, HiveCheckpointWax, HiveRAGWax, and HiveSwiftAgents adapters.
+description: HiveConduit, HiveCheckpointWax, and HiveRAGWax adapters.
 ---
 
 # Adapter Modules
@@ -63,25 +63,5 @@ let env = HiveEnvironment<Schema>(
     clock: SystemClock(),
     logger: ConsoleLogger(),
     memoryStore: AnyHiveMemoryStore(ragStore)
-)
-```
-
-## HiveSwiftAgents
-
-Conditionally compiled (`#if canImport(SwiftAgents)`) compatibility layer:
-
-- `SwiftAgentsToolRegistry` implements `HiveToolRegistry`
-- Converts SwiftAgents tools to `HiveToolDefinition`
-- Maps `ToolParameter` types to JSON Schema
-
-```swift
-import HiveSwiftAgents
-
-let registry = SwiftAgentsToolRegistry(agents: myAgents)
-let env = HiveEnvironment<Schema>(
-    context: (),
-    clock: SystemClock(),
-    logger: ConsoleLogger(),
-    tools: AnyHiveToolRegistry(registry)
 )
 ```

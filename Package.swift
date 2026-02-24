@@ -15,12 +15,12 @@ let package = Package(
         .library(name: "HiveConduit", targets: ["HiveConduit"]),
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
         .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
-        .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
         .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"),
         .package(url: "https://github.com/christopherkarani/Wax.git", from: "0.1.3"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
     ],
     targets: [
         .target(
@@ -60,12 +60,6 @@ let package = Package(
             path: "Sources/Hive/Sources/HiveRAGWax"
         ),
         .target(
-            name: "HiveSwiftAgents",
-            dependencies: ["HiveCore"],
-            path: "Sources/Hive/Sources/HiveSwiftAgents",
-            exclude: ["README.md"]
-        ),
-        .target(
             name: "Hive",
             dependencies: [
                 "HiveCore",
@@ -86,6 +80,9 @@ let package = Package(
             name: "HiveCoreTests",
             dependencies: ["HiveCore"],
             path: "Sources/Hive/Tests/HiveCoreTests",
+            resources: [
+                .process("Runtime/Fixtures"),
+            ],
             swiftSettings: [
                 .define("HIVE_V11_TRIGGERS"),
             ]
@@ -112,11 +109,6 @@ let package = Package(
             name: "HiveRAGWaxTests",
             dependencies: ["HiveRAGWax"],
             path: "Sources/Hive/Tests/HiveRAGWaxTests"
-        ),
-        .testTarget(
-            name: "HiveSwiftAgentsTests",
-            dependencies: ["HiveSwiftAgents"],
-            path: "Sources/Hive/Tests/HiveSwiftAgentsTests"
         ),
         .testTarget(
             name: "HiveTests",

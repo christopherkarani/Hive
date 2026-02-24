@@ -94,4 +94,30 @@ struct HiveRAGWaxStoreTests {
         #expect(latestQueryResults.first?.key == "k1")
         #expect(latestQueryResults.first?.text == "beta note")
     }
+
+    @Test func recallNonPositiveLimitReturnsEmpty() async throws {
+        let url = try makeTempWaxURL()
+        let store = try await HiveRAGWaxStore.create(at: url)
+        try await store.remember(namespace: ["docs"], key: "d1", text: "Swift actors", metadata: [:])
+
+        let zero = try await store.recall(namespace: ["docs"], query: "Swift", limit: 0)
+        #expect(zero.isEmpty)
+
+        let negative = try await store.recall(namespace: ["docs"], query: "Swift", limit: -1)
+        #expect(negative.isEmpty)
+    }
+
+    @Test func namespaceComponentsContainingSlashDoNotCollide() async throws {
+        let url = try makeTempWaxURL()
+        let store = try await HiveRAGWaxStore.create(at: url)
+
+        try await store.remember(namespace: ["foo", "bar"], key: "k1", text: "value from split namespace", metadata: [:])
+        try await store.remember(namespace: ["foo/bar"], key: "k1", text: "value from literal slash namespace", metadata: [:])
+
+        let split = try await store.get(namespace: ["foo", "bar"], key: "k1")
+        let literal = try await store.get(namespace: ["foo/bar"], key: "k1")
+
+        #expect(split?.text == "value from split namespace")
+        #expect(literal?.text == "value from literal slash namespace")
+    }
 }

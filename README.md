@@ -1,109 +1,108 @@
-# Hive
+<p align="center">
+  <h1 align="center">Hive</h1>
+  <p align="center"><strong>LangGraph for Swift.</strong> Build AI agent workflows that produce byte-identical output on every run.</p>
+</p>
 
-**Deterministic graph runtime for agent workflows in Swift.**
+<p align="center">
+  <img src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat&logo=swift&logoColor=white" alt="Swift 6.2">
+  <img src="https://img.shields.io/badge/iOS-26%2B-007AFF?style=flat&logo=apple&logoColor=white" alt="iOS 26+">
+  <img src="https://img.shields.io/badge/macOS-26%2B-007AFF?style=flat&logo=apple&logoColor=white" alt="macOS 26+">
+  <img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT License">
+  <a href="https://christopherkarani.github.io/Hive/"><img src="https://img.shields.io/badge/Docs-Website-58a6ff?style=flat" alt="Documentation"></a>
+</p>
 
-![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange) ![iOS 26+](https://img.shields.io/badge/iOS-26%2B-blue) ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-blue) ![License](https://img.shields.io/badge/License-MIT-green)
+---
 
-Hive runs agent workflows as deterministic superstep graphs. Same input, same output, every time — golden-testable, checkpoint-resumable, and built entirely on Swift concurrency.
+LLM agent workflows break in subtle ways — state mutated mid-step, non-deterministic tool call ordering, lost context on resume. Hive eliminates these failure modes with a **deterministic superstep execution model** borrowed from [Bulk Synchronous Parallel](https://en.wikipedia.org/wiki/Bulk_synchronous_parallel) (the same model behind Google Pregel and Apache Spark GraphX).
 
-## Why Hive?
-
-- **Deterministic** — BSP supersteps with lexicographic ordering. Every run produces identical event traces. Write golden tests against agent behavior.
-- **Swift-native** — Actors, `Sendable`, `async`/`await`, result builders. No Python, no YAML, no runtime reflection.
-- **Agent-ready** — Tool calling, bounded agent loops, streaming tokens, fan-out/join patterns, and hybrid inference (on-device + cloud).
-- **Resumable** — Interrupt a workflow for human approval. Checkpoint state. Resume with typed payloads. No lost context.
-
- ## 30-Second Example
-
-A workflow that classifies input and branches to different handlers:
+Run the same graph twice with the same inputs. Get identical output, identical event traces, identical checkpoint bytes. Write golden tests against agent behavior the same way you test a pure function.
 
 ```swift
 import HiveDSL
 
-let workflow = Workflow<MySchema> {
+Workflow<Schema> {
     Node("classify") { input in
-        let text = try input.store.get(MySchema.text)
-        Effects {
-            Set(MySchema.category, classify(text))
-            UseGraphEdges()
-        }
+        let text = try input.store.get(Schema.text)
+        Effects { Set(Schema.category, classify(text)); UseGraphEdges() }
     }.start()
 
-    Node("respond") { _ in Effects { End() } }
+    Node("respond")  { _ in Effects { End() } }
     Node("escalate") { _ in Effects { End() } }
 
     Branch(from: "classify") {
         Branch.case(name: "urgent", when: {
-            (try? $0.get(MySchema.category)) == "urgent"
-        }) {
-            GoTo("escalate")
-        }
+            (try? $0.get(Schema.category)) == "urgent"
+        }) { GoTo("escalate") }
         Branch.default { GoTo("respond") }
     }
 }
-
-let graph = try workflow.compile()
-let runtime = HiveRuntime(graph: graph, environment: env)
 ```
+
+## Try It
+
+```sh
+git clone https://github.com/christopherkarani/Hive.git
+cd Hive && swift run HiveTinyGraphExample
+```
+
+No API keys required. The example runs fan-out workers, a join barrier, and an interrupt/resume cycle — all in-process.
+
+## Run Tests
+
+```sh
+swift test
+```
+
+If your environment shows intermittent `swift test` runner hangs, use the stable runner:
+
+```sh
+./scripts/swift-test-stable.sh
+```
+
+## Why Hive?
+
+|  | Hive | LangGraph (Python) | Building from scratch |
+|--|------|-------------------|----------------------|
+| **Deterministic execution** | Superstep ordering by node ID. Identical traces every run. | Depends on implementation. No structural guarantee. | You build and maintain it yourself. |
+| **Type safety** | `HiveSchema` with typed channels, reducers, codecs | Runtime dicts. Errors at execution time. | Whatever you enforce manually. |
+| **Concurrency model** | Swift actors + `Sendable`. Data races are compile errors. | GIL + threads. Race conditions are runtime surprises. | Hope and prayer. |
+| **Interrupt / Resume** | Typed payloads. Checkpoint includes frontier + join barriers + store. | Checkpoint support varies. | Significant custom work. |
+| **Fan-out / Join** | `SpawnEach` + `Join` with bitset barriers. Deterministic merge. | Possible but manual wiring. | Graph theory homework. |
+| **On-device inference** | Native support. Route between on-device and cloud models. | Python-only. No on-device story. | Depends on your stack. |
+| **Golden testing** | Assert exact event sequences. Graph descriptions produce immutable JSON. | Snapshot testing possible but non-deterministic. | Not practical without determinism. |
+| **Swift concurrency** | `async`/`await`, result builders, actors. First-class. | N/A | N/A |
+
+## How It Works
+
+```
+Schema → Graph → Runtime → Output
+
+  1. Define typed channels          (HiveSchema)
+  2. Build a graph via DSL          (Workflow { Node(...) Edge(...) Branch(...) })
+  3. Compile to validated graph     (.compile() — cycle detection, SHA-256 versioning)
+  4. Execute supersteps:
+     ┌─ Frontier nodes run concurrently (lexicographic order)
+     ├─ Writes collected, reduced, committed atomically
+     ├─ Routers run on post-commit state
+     └─ Next frontier scheduled
+  5. Repeat until End() or Interrupt()
+```
+
+Every superstep is atomic. No node sees another node's writes from the same step. Reducers merge concurrent writes deterministically.
 
 ## What You Can Build
 
-- Multi-step agent graphs with fan-out, joins, and tool-approval gates
-- Human-in-the-loop workflows that pause for review and resume reliably
-- RAG pipelines with on-device vector recall via `HiveRAGWax`
-- Hybrid inference: on-device models + cloud fallback with deterministic routing
-- SwiftUI apps with streaming agent output via `AsyncThrowingStream`
+**Agent graphs** — Multi-step LLM workflows with tool calling, bounded ReAct loops, and streaming tokens via `AsyncThrowingStream`.
 
-## Core Concepts
+**Human-in-the-loop** — Interrupt for approval, checkpoint full runtime state, resume with typed payloads. No lost context.
 
-| Concept | What it does |
-|---------|-------------|
-| **Schema** | Declares typed channels with reducers, scopes, and codecs |
-| **Node** | Async function that reads state and returns writes + routing |
-| **Superstep** | All frontier nodes run concurrently, then commit atomically |
-| **Channel** | Typed state slot — global (shared) or task-local (per fan-out) |
-| **Reducer** | Deterministic merge when multiple nodes write the same channel |
-| **Interrupt** | Pause the workflow, save a checkpoint, wait for human input |
-| **Router** | Synchronous branching on fresh post-commit state |
+**Fan-out pipelines** — `SpawnEach` dispatches parallel workers with task-local state. `Join` barriers synchronize them. Deterministic merge on completion.
 
-## Examples
+**Hybrid inference** — Route between on-device models and cloud providers. Same deterministic execution regardless of which model responds.
 
-### Minimal — Hello World
+**RAG** — On-device vector recall via `HiveRAGWax` with BM25 ranking. Pluggable memory stores.
 
-```swift
-Workflow<Schema> {
-    Node("greet") { _ in
-        Effects {
-            Set(Schema.message, "Hello from Hive!")
-            End()
-        }
-    }.start()
-}
-```
-
-### Branching — Route by State
-
-```swift
-Workflow<Schema> {
-    Node("check") { _ in
-        Effects { Set(Schema.score, 85); UseGraphEdges() }
-    }.start()
-
-    Node("pass") { _ in Effects { End() } }
-    Node("fail") { _ in Effects { End() } }
-
-    Branch(from: "check") {
-        Branch.case(name: "high", when: {
-            (try? $0.get(Schema.score)) ?? 0 >= 70
-        }) {
-            GoTo("pass")
-        }
-        Branch.default { GoTo("fail") }
-    }
-}
-```
-
-### Agent Loop — LLM with Tools
+## Agent Loop — 5 Lines
 
 ```swift
 Workflow<Schema> {
@@ -117,7 +116,7 @@ Workflow<Schema> {
 }
 ```
 
-### Fan-out, Join, Interrupt
+## Fan-Out, Join, Interrupt
 
 Parallel workers, barrier sync, then human approval:
 
@@ -147,9 +146,9 @@ Workflow<Schema> {
 }
 ```
 
-## Macros
+## Define a Schema
 
-The `@HiveSchema` macro eliminates channel boilerplate. Write this:
+The `@HiveSchema` macro eliminates boilerplate:
 
 ```swift
 @HiveSchema
@@ -162,26 +161,38 @@ enum MySchema: HiveSchema {
 }
 ```
 
-The macro generates typed `HiveChannelKey` properties, `channelSpecs`, codecs, and scope configuration — roughly 20 lines of code you never have to write or maintain.
+Generates typed channel keys, `channelSpecs`, codecs, and scope configuration.
 
 ## Architecture
 
 ```
-HiveCore  (zero external deps — pure Swift)
-├── HiveDSL             result-builder workflow DSL
+HiveCore  (zero external dependencies — pure Swift)
+├── HiveDSL             Result-builder workflow DSL
 ├── HiveConduit          Conduit model client adapter
 ├── HiveCheckpointWax    Wax-backed checkpoint store
 └── HiveRAGWax           Wax-backed RAG snippets
 
-Hive  (umbrella — re-exports Core + DSL + Conduit + CheckpointWax)
+Hive  (umbrella — re-exports Core + DSL + adapters)
 HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 ```
 
-`HiveCore` has zero external dependencies. Adapters bring in only what they need. You can depend on `HiveCore` alone for maximum control, or `Hive` for batteries-included.
+Depend on `HiveCore` alone for zero external dependencies, or `Hive` for batteries-included.
 
-## Getting Started
+## Status
 
-### Add to your project
+| Component | Status |
+|-----------|--------|
+| HiveCore (schema, graph, runtime, store) | **Stable** |
+| HiveDSL (workflow result builder) | **Stable** |
+| HiveConduit (LLM adapter) | **Stable** |
+| HiveCheckpointWax (persistence) | **Stable** |
+| HiveRAGWax (vector recall) | **Stable** |
+| HiveMacros (@HiveSchema) | **Preview** |
+| Distributed execution | Planned |
+| Visual graph editor | Planned |
+| SwiftUI bindings | Planned |
+
+## Install
 
 ```swift
 // Package.swift
@@ -193,37 +204,15 @@ dependencies: [
 .product(name: "Hive", package: "Hive")
 ```
 
-### Build and test
+## Documentation
 
-```sh
-swift build
-swift test
-swift run HiveTinyGraphExample
-```
+Full docs at **[christopherkarani.github.io/Hive](https://christopherkarani.github.io/Hive/)** — covers every module, the complete DSL grammar, testing patterns, and worked examples.
 
-### Run a single test target
-
-```sh
-swift test --filter HiveCoreTests
-swift test --filter HiveDSLTests
-```
-
-## Specification
-
-Hive's behavior is defined by a normative specification: [`HIVE_SPEC.md`](HIVE_SPEC.md). The spec covers execution semantics, checkpoint format, interrupt/resume protocol, and determinism guarantees. Implementation follows the spec — not the other way around.
-
-## Roadmap
-
-- [ ] Distributed execution across multiple devices
-- [ ] Visual graph editor with live state inspection
-- [ ] SwiftUI bindings for real-time workflow observation
-- [ ] Pre-built agent templates (ReAct, Plan-and-Execute, Reflection)
+The runtime behavior is defined by a normative specification: [`HIVE_SPEC.md`](HIVE_SPEC.md). Implementation follows the spec — not the other way around.
 
 ## Contributing
 
-Issues and PRs are welcome. The spec ([`HIVE_SPEC.md`](HIVE_SPEC.md)) is the source of truth for runtime behavior.
-
-If Hive is useful to you, a star helps others find it.
+Issues and PRs welcome. The [spec](HIVE_SPEC.md) is the source of truth for runtime behavior.
 
 ## License
 

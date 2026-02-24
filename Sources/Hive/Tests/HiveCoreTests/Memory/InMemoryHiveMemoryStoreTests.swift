@@ -99,4 +99,16 @@ struct InMemoryHiveMemoryStoreTests {
         let results = try await store.recall(namespace: ["docs"], query: "   ", limit: 10)
         #expect(results.isEmpty)
     }
+
+    @Test func namespaceComponentsContainingSlashDoNotCollide() async throws {
+        let store = InMemoryHiveMemoryStore()
+        try await store.remember(namespace: ["foo", "bar"], key: "k1", text: "split namespace value", metadata: [:])
+        try await store.remember(namespace: ["foo/bar"], key: "k1", text: "literal slash namespace value", metadata: [:])
+
+        let split = try await store.get(namespace: ["foo", "bar"], key: "k1")
+        let literal = try await store.get(namespace: ["foo/bar"], key: "k1")
+
+        #expect(split?.text == "split namespace value")
+        #expect(literal?.text == "literal slash namespace value")
+    }
 }

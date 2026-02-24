@@ -612,10 +612,11 @@ func testRetryBackoff_CancellationErrorFromClock_TreatedAsCancellation_CancelsOt
     #expect(events.contains { if case .stepFinished = $0.kind { return true }; return false } == false)
     #expect(events.contains { if case .writeApplied = $0.kind { return true }; return false } == false)
     if let last = events.last {
-        guard case .runCancelled = last.kind else {
+        guard case .runCancelled(let cause) = last.kind else {
             #expect(Bool(false))
             return
         }
+        #expect(cause == .executionObserved || cause == .explicitRequest)
     } else {
         #expect(Bool(false))
         return
@@ -687,10 +688,11 @@ func testCancellationDuringStep_EmitsTaskFailedForAllFrontierTasks_InOrdinalOrde
     #expect(events.contains { if case .writeApplied = $0.kind { return true }; return false } == false)
     #expect(events.contains { if case .stepFinished = $0.kind { return true }; return false } == false)
     if let last = events.last {
-        guard case .runCancelled = last.kind else {
+        guard case .runCancelled(let cause) = last.kind else {
             #expect(Bool(false))
             return
         }
+        #expect(cause == .executionObserved || cause == .explicitRequest)
     } else {
         #expect(Bool(false))
         return

@@ -15,6 +15,7 @@ The primary error type covering all runtime failures:
 | **Store/Channel** | `unknownChannelID`, `scopeMismatch`, `channelTypeMismatch`, `storeValueMissing`, `missingCodec` |
 | **Write Policy** | `updatePolicyViolation`, `taskLocalWriteNotAllowed` |
 | **Checkpoint** | `checkpointStoreMissing`, `checkpointVersionMismatch`, `checkpointDecodeFailed`, `checkpointEncodeFailed`, `checkpointCorrupt` |
+| **Fork** | `forkSourceCheckpointMissing`, `forkCheckpointStoreMissing`, `forkCheckpointQueryUnsupported`, `forkTargetThreadConflict`, `forkSchemaGraphMismatch`, `forkMalformedCheckpoint` |
 | **Interrupt/Resume** | `interruptPending`, `noCheckpointToResume`, `noInterruptToResume`, `resumeInterruptMismatch` |
 | **Model/Inference** | `modelClientMissing`, `modelStreamInvalid`, `toolRegistryMissing`, `modelToolLoopMaxModelInvocationsExceeded` |
 | **Bounds** | `stepIndexOutOfRange`, `taskOrdinalOutOfRange` |
@@ -32,6 +33,10 @@ The primary error type covering all runtime failures:
 **`modelClientMissing`** — Using `ModelTurn` without providing a model client in `HiveEnvironment`. Set the `model` field.
 
 **`noCheckpointToResume`** — Calling `resume()` without a saved checkpoint. Ensure checkpoint policy is enabled.
+
+**`forkTargetThreadConflict`** — Fork target thread already has in-memory or persisted lineage. Use a fresh target thread ID.
+
+**`forkCheckpointQueryUnsupported`** — Explicit `from: checkpointID` fork used with a non-queryable checkpoint store.
 
 ## HiveCompilationError
 

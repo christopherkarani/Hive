@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "HES0",
+  "events": [
+    {
+      "id": {
+        "runID": "legacy-run",
+        "attemptID": "legacy-attempt",
+        "eventIndex": 0,
+        "stepIndex": null,
+        "taskOrdinal": null
+      },
+      "kind": "run.started",
+      "fields": {
+        "threadID": "thread-legacy"
+      },
+      "metadata": {
+        "source": "fixture"
+      }
+    },
+    {
+      "id": {
+        "runID": "legacy-run",
+        "attemptID": "legacy-attempt",
+        "eventIndex": 1,
+        "stepIndex": null,
+        "taskOrdinal": null
+      },
+      "kind": "run.finished",
+      "fields": {},
+      "metadata": {
+        "source": "fixture"
+      }
+    }
+  ]
+}
