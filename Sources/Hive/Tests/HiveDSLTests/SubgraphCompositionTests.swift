@@ -101,11 +101,79 @@ private enum ParentSchema: HiveSchema {
     }
 }
 
+private enum ChildRunOptionsSchema: HiveSchema {
+    typealias Input = Void
+
+    static var channelSpecs: [AnyHiveChannelSpec<ChildRunOptionsSchema>] {
+        let checkpointKey = HiveChannelKey<ChildRunOptionsSchema, String>(HiveChannelID("checkpointPolicy"))
+        let checkpointSpec = HiveChannelSpec(
+            key: checkpointKey,
+            scope: .global,
+            reducer: .lastWriteWins(),
+            updatePolicy: .single,
+            initial: { "" },
+            persistence: .untracked
+        )
+        let streamingKey = HiveChannelKey<ChildRunOptionsSchema, String>(HiveChannelID("streamingMode"))
+        let streamingSpec = HiveChannelSpec(
+            key: streamingKey,
+            scope: .global,
+            reducer: .lastWriteWins(),
+            updatePolicy: .single,
+            initial: { "" },
+            persistence: .untracked
+        )
+        let concurrencyKey = HiveChannelKey<ChildRunOptionsSchema, Int>(HiveChannelID("maxConcurrency"))
+        let concurrencySpec = HiveChannelSpec(
+            key: concurrencyKey,
+            scope: .global,
+            reducer: .lastWriteWins(),
+            updatePolicy: .single,
+            initial: { 0 },
+            persistence: .untracked
+        )
+        return [
+            AnyHiveChannelSpec(checkpointSpec),
+            AnyHiveChannelSpec(streamingSpec),
+            AnyHiveChannelSpec(concurrencySpec),
+        ]
+    }
+}
+
 // MARK: - Channel Keys
 
 private let parentMessageKey = HiveChannelKey<ParentSchema, String>(HiveChannelID("message"))
 private let parentResultKey = HiveChannelKey<ParentSchema, String>(HiveChannelID("result"))
 private let childResultKey = HiveChannelKey<ChildSchema, String>(HiveChannelID("childResult"))
+private let childObservedCheckpointPolicyKey = HiveChannelKey<ChildRunOptionsSchema, String>(HiveChannelID("checkpointPolicy"))
+private let childObservedStreamingModeKey = HiveChannelKey<ChildRunOptionsSchema, String>(HiveChannelID("streamingMode"))
+private let childObservedMaxConcurrencyKey = HiveChannelKey<ChildRunOptionsSchema, Int>(HiveChannelID("maxConcurrency"))
+
+private func checkpointPolicyDescription(_ policy: HiveCheckpointPolicy) -> String {
+    switch policy {
+    case .disabled:
+        return "disabled"
+    case .everyStep:
+        return "everyStep"
+    case .every(let steps):
+        return "every(\(steps))"
+    case .onInterrupt:
+        return "onInterrupt"
+    }
+}
+
+private func streamingModeDescription(_ mode: HiveStreamingMode) -> String {
+    switch mode {
+    case .events:
+        return "events"
+    case .values:
+        return "values"
+    case .updates:
+        return "updates"
+    case .combined:
+        return "combined"
+    }
+}
 
 // MARK: - Tests
 
@@ -268,6 +336,145 @@ struct SubgraphCompositionTests {
             return
         }
         #expect(try store.get(parentResultKey) == "init-step1-step2-step3")
+    }
+
+    @Test("Subgraph inherits parent run options by default")
+    func subgraphInheritsParentRunOptionsByDefault() async throws {
+        let parentCheckpointStore = InMemoryCheckpointStore<ParentSchema>()
+        let childCheckpointStore = InMemoryCheckpointStore<ChildRunOptionsSchema>()
+
+        let childGraph = try Workflow<ChildRunOptionsSchema> {
+            Node("observe") { input in
+                let options = input.run.options
+                return Effects {
+                    Set(childObservedCheckpointPolicyKey, checkpointPolicyDescription(options.checkpointPolicy))
+                    Set(childObservedStreamingModeKey, streamingModeDescription(options.streamingMode))
+                    Set(childObservedMaxConcurrencyKey, options.maxConcurrentTasks)
+                    End()
+                }
+            }.start()
+        }.compile()
+
+        let workflow = Workflow<ParentSchema> {
+            Subgraph<ParentSchema, ChildRunOptionsSchema>(
+                "sub",
+                childGraph: childGraph,
+                inputMapping: { _ in () },
+                environmentMapping: { _ in
+                    makeEnvironment(
+                        context: (),
+                        checkpointStore: AnyHiveCheckpointStore(childCheckpointStore)
+                    )
+                },
+                outputMapping: { _, childStore in
+                    let checkpoint = try childStore.get(childObservedCheckpointPolicyKey)
+                    let streaming = try childStore.get(childObservedStreamingModeKey)
+                    let concurrency = try childStore.get(childObservedMaxConcurrencyKey)
+                    return [AnyHiveWrite(parentResultKey, "\(checkpoint)|\(streaming)|\(concurrency)")]
+                }
+            ).start()
+        }
+
+        let graph = try workflow.compile()
+        let runtime = try HiveRuntime(
+            graph: graph,
+            environment: makeEnvironment(
+                context: (),
+                checkpointStore: AnyHiveCheckpointStore(parentCheckpointStore)
+            )
+        )
+        let options = HiveRunOptions(
+            maxConcurrentTasks: 5,
+            checkpointPolicy: .every(steps: 3),
+            streamingMode: .combined
+        )
+        let handle = await runtime.run(
+            threadID: HiveThreadID("subgraph-inherit-options"),
+            input: (),
+            options: options
+        )
+
+        let eventsTask = Task { await drainEvents(handle.events) }
+        _ = try await handle.outcome.value
+        _ = await eventsTask.value
+
+        guard let store = await runtime.getLatestStore(threadID: HiveThreadID("subgraph-inherit-options")) else {
+            #expect(Bool(false))
+            return
+        }
+        #expect(try store.get(parentResultKey) == "every(3)|combined|5")
+    }
+
+    @Test("Subgraph explicit childRunOptions override parent run options")
+    func subgraphExplicitChildRunOptionsOverrideParent() async throws {
+        let parentCheckpointStore = InMemoryCheckpointStore<ParentSchema>()
+        let childCheckpointStore = InMemoryCheckpointStore<ChildRunOptionsSchema>()
+
+        let childGraph = try Workflow<ChildRunOptionsSchema> {
+            Node("observe") { input in
+                let options = input.run.options
+                return Effects {
+                    Set(childObservedCheckpointPolicyKey, checkpointPolicyDescription(options.checkpointPolicy))
+                    Set(childObservedStreamingModeKey, streamingModeDescription(options.streamingMode))
+                    Set(childObservedMaxConcurrencyKey, options.maxConcurrentTasks)
+                    End()
+                }
+            }.start()
+        }.compile()
+
+        let workflow = Workflow<ParentSchema> {
+            Subgraph<ParentSchema, ChildRunOptionsSchema>(
+                "sub",
+                childGraph: childGraph,
+                childRunOptions: HiveRunOptions(
+                    maxConcurrentTasks: 2,
+                    checkpointPolicy: .onInterrupt,
+                    streamingMode: .updates
+                ),
+                inputMapping: { _ in () },
+                environmentMapping: { _ in
+                    makeEnvironment(
+                        context: (),
+                        checkpointStore: AnyHiveCheckpointStore(childCheckpointStore)
+                    )
+                },
+                outputMapping: { _, childStore in
+                    let checkpoint = try childStore.get(childObservedCheckpointPolicyKey)
+                    let streaming = try childStore.get(childObservedStreamingModeKey)
+                    let concurrency = try childStore.get(childObservedMaxConcurrencyKey)
+                    return [AnyHiveWrite(parentResultKey, "\(checkpoint)|\(streaming)|\(concurrency)")]
+                }
+            ).start()
+        }
+
+        let graph = try workflow.compile()
+        let runtime = try HiveRuntime(
+            graph: graph,
+            environment: makeEnvironment(
+                context: (),
+                checkpointStore: AnyHiveCheckpointStore(parentCheckpointStore)
+            )
+        )
+        let parentOptions = HiveRunOptions(
+            maxConcurrentTasks: 9,
+            checkpointPolicy: .everyStep,
+            streamingMode: .values
+        )
+        let handle = await runtime.run(
+            threadID: HiveThreadID("subgraph-override-options"),
+            input: (),
+            options: parentOptions
+        )
+
+        let eventsTask = Task { await drainEvents(handle.events) }
+        _ = try await handle.outcome.value
+        _ = await eventsTask.value
+
+        guard let store = await runtime.getLatestStore(threadID: HiveThreadID("subgraph-override-options")) else {
+            #expect(Bool(false))
+            return
+        }
+        #expect(try store.get(parentResultKey) == "onInterrupt|updates|2")
     }
 
     @Test("Child interrupt propagates as HiveSubgraphError.childInterrupted")

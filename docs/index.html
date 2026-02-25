@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hive Documentation</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --text: #c9d1d9;
+  --text-secondary: #8b949e;
+  --accent: #f0883e;
+  --accent-dim: #d18616;
+  --link: #58a6ff;
+  --border: #30363d;
+  --code-bg: #161b22;
+  --inline-code-bg: #1f2937;
+  --green: #3fb950;
+  --red: #f85149;
+  --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  display: flex;
+  min-height: 100vh;
+}
+/* Sidebar */
+nav {
+  width: 280px;
+  min-width: 280px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 24px 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 100;
+}
+nav .logo {
+  padding: 0 24px 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+nav .logo h1 {
+  font-size: 24px;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+nav .logo p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+nav a {
+  display: block;
+  padding: 6px 24px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+nav a:hover { color: var(--text); background: var(--bg-tertiary); }
+nav a.active { color: var(--accent); border-left: 3px solid var(--accent); padding-left: 21px; }
+nav .section-title {
+  padding: 12px 24px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+/* Main content */
+main {
+  margin-left: 280px;
+  flex: 1;
+  max-width: 900px;
+  padding: 48px 60px;
+}
+h1 { font-size: 36px; color: #fff; font-weight: 700; margin-bottom: 16px; letter-spacing: -0.5px; }
+h2 {
+  font-size: 28px;
+  color: #fff;
+  font-weight: 700;
+  margin-top: 64px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  letter-spacing: -0.3px;
+}
+h3 { font-size: 20px; color: #fff; font-weight: 600; margin-top: 36px; margin-bottom: 12px; }
+h4 { font-size: 16px; color: var(--text); font-weight: 600; margin-top: 24px; margin-bottom: 8px; }
+p { margin-bottom: 16px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { color: #fff; }
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+  font-size: 13px;
+  background: var(--inline-code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  overflow-x: auto;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+th {
+  text-align: left;
+  padding: 10px 16px;
+  background: var(--bg-tertiary);
+  color: #fff;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+td {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+tr:hover td { background: rgba(255,255,255,0.02); }
+/* Lists */
+ul, ol { margin-bottom: 16px; padding-left: 24px; }
+li { margin-bottom: 6px; }
+/* Blockquote / callout */
+blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 20px;
+}
+blockquote p { margin-bottom: 0; }
+/* Badge */
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 6px;
+}
+.badge-orange { background: rgba(240,136,62,0.15); color: var(--accent); }
+.badge-blue { background: rgba(88,166,255,0.15); color: var(--link); }
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+/* Hero */
+.hero {
+  padding: 32px 0 40px;
+  margin-bottom: 20px;
+}
+.hero .badges { margin-bottom: 16px; }
+.hero p { font-size: 18px; color: var(--text-secondary); max-width: 640px; }
+/* Architecture diagram */
+.diagram {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 20px;
+  font-family: 'SF Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+/* Responsive */
+@media (max-width: 900px) {
+  nav { display: none; }
+  main { margin-left: 0; padding: 24px; }
+}
+/* Section anchors */
+section { scroll-margin-top: 20px; }
+hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+/* Syntax highlighting (minimal) */
+.kw { color: var(--purple); }
+.ty { color: #79c0ff; }
+.st { color: #a5d6ff; }
+.cm { color: #8b949e; font-style: italic; }
+.fn { color: #d2a8ff; }
+.num { color: #79c0ff; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">
+    <h1>Hive</h1>
+    <p>Deterministic Graph Runtime</p>
+  </div>
+  <div class="section-title">Getting Started</div>
+  <a href="#overview">Overview</a>
+  <a href="#architecture">Architecture</a>
+  <div class="section-title">Core</div>
+  <a href="#schema">Schema System</a>
+  <a href="#store">Store Model</a>
+  <a href="#graph">Graph Compilation</a>
+  <a href="#runtime">Runtime Engine</a>
+  <div class="section-title">DSL</div>
+  <a href="#dsl">HiveDSL</a>
+  <div class="section-title">Features</div>
+  <a href="#checkpointing">Checkpointing</a>
+  <a href="#interrupts">Interrupt/Resume</a>
+  <a href="#inference">Hybrid Inference</a>
+  <a href="#memory">Memory System</a>
+  <div class="section-title">Ecosystem</div>
+  <a href="#adapters">Adapter Modules</a>
+  <a href="#data-structures">Data Structures</a>
+  <a href="#errors">Error Handling</a>
+  <div class="section-title">Development</div>
+  <a href="#testing">Testing Guide</a>
+  <a href="#examples">Examples</a>
+</nav>
+
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="badges">
+    <span class="badge badge-orange">Swift 6.2</span>
+    <span class="badge badge-blue">iOS 26+</span>
+    <span class="badge badge-blue">macOS 26+</span>
+    <span class="badge badge-green">MIT License</span>
+  </div>
+  <h1>Hive Documentation</h1>
+  <p>Deterministic graph runtime for agent workflows in Swift. Same input, same output, every time &mdash; golden-testable, checkpoint-resumable, and built entirely on Swift concurrency.</p>
+</div>
+
+<!-- 1. OVERVIEW -->
+<section id="overview">
+<h2>1. Overview</h2>
+<p>Hive is the Swift equivalent of LangGraph &mdash; a deterministic graph runtime for building agent workflows. It executes workflows as <strong>superstep graphs</strong> where frontier nodes run concurrently, writes commit atomically, and routers schedule the next frontier.</p>
+
+<h3>Why Hive?</h3>
+<ul>
+  <li><strong>Deterministic</strong> &mdash; BSP supersteps with lexicographic ordering. Every run produces identical event traces.</li>
+  <li><strong>Swift-native</strong> &mdash; Actors, <code>Sendable</code>, <code>async</code>/<code>await</code>, result builders. No Python, no YAML.</li>
+  <li><strong>Agent-ready</strong> &mdash; Tool calling, bounded agent loops, streaming tokens, fan-out/join, hybrid inference.</li>
+  <li><strong>Resumable</strong> &mdash; Interrupt for human approval. Checkpoint state. Resume with typed payloads.</li>
+</ul>
+
+<h3>Quick Start</h3>
+<pre><code>swift build                              <span class="cm"># Build all targets</span>
+swift test                               <span class="cm"># Run all tests</span>
+swift test --filter HiveCoreTests        <span class="cm"># Single test target</span>
+swift run HiveTinyGraphExample           <span class="cm"># Run example</span></code></pre>
+
+<h3>30-Second Example</h3>
+<pre><code><span class="kw">import</span> <span class="ty">HiveDSL</span>
+
+<span class="kw">let</span> workflow = <span class="ty">Workflow</span>&lt;<span class="ty">MySchema</span>&gt; {
+    <span class="ty">Node</span>(<span class="st">"classify"</span>) { input <span class="kw">in</span>
+        <span class="kw">let</span> text = <span class="kw">try</span> input.store.<span class="fn">get</span>(<span class="ty">MySchema</span>.text)
+        <span class="ty">Effects</span> {
+            <span class="fn">Set</span>(<span class="ty">MySchema</span>.category, <span class="fn">classify</span>(text))
+            <span class="fn">UseGraphEdges</span>()
+        }
+    }.<span class="fn">start</span>()
+
+    <span class="ty">Node</span>(<span class="st">"respond"</span>) { _ <span class="kw">in</span> <span class="ty">Effects</span> { <span class="fn">End</span>() } }
+    <span class="ty">Node</span>(<span class="st">"escalate"</span>) { _ <span class="kw">in</span> <span class="ty">Effects</span> { <span class="fn">End</span>() } }
+
+    <span class="ty">Branch</span>(from: <span class="st">"classify"</span>) {
+        <span class="ty">Branch</span>.<span class="kw">case</span>(name: <span class="st">"urgent"</span>, when: {
+            (<span class="kw">try</span>? $0.<span class="fn">get</span>(<span class="ty">MySchema</span>.category)) == <span class="st">"urgent"</span>
+        }) { <span class="fn">GoTo</span>(<span class="st">"escalate"</span>) }
+        <span class="ty">Branch</span>.<span class="kw">default</span> { <span class="fn">GoTo</span>(<span class="st">"respond"</span>) }
+    }
+}
+
+<span class="kw">let</span> graph = <span class="kw">try</span> workflow.<span class="fn">compile</span>()
+<span class="kw">let</span> runtime = <span class="ty">HiveRuntime</span>(graph: graph, environment: env)</code></pre>
+</section>
+
+<!-- 2. ARCHITECTURE -->
+<section id="architecture">
+<h2>2. Architecture</h2>
+<div class="diagram">HiveCore  (zero external deps &mdash; pure Swift)
+&#9500;&#9472;&#9472; HiveDSL             result-builder workflow DSL
+&#9500;&#9472;&#9472; HiveConduit          Conduit model client adapter
+&#9500;&#9472;&#9472; HiveCheckpointWax    Wax-backed checkpoint store
+&#9492;&#9472;&#9472; HiveRAGWax           Wax-backed RAG snippets
+
+Hive  (umbrella &mdash; re-exports Core + DSL + Conduit + CheckpointWax)
+HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint</div>
+
+<table>
+<tr><th>Module</th><th>Dependencies</th><th>Purpose</th></tr>
+<tr><td><code>HiveCore</code></td><td>None</td><td>Schema, graph, runtime, store</td></tr>
+<tr><td><code>HiveDSL</code></td><td>HiveCore</td><td>Result-builder workflow DSL</td></tr>
+<tr><td><code>HiveConduit</code></td><td>HiveCore, Conduit</td><td>LLM provider adapter</td></tr>
+<tr><td><code>HiveCheckpointWax</code></td><td>HiveCore, Wax</td><td>Persistent checkpoints</td></tr>
+<tr><td><code>HiveRAGWax</code></td><td>HiveCore, Wax</td><td>Vector RAG persistence</td></tr>
+<tr><td><code>Hive</code></td><td>All above</td><td>Umbrella re-export</td></tr>
+</table>
+
+<h3>Execution Flow</h3>
+<div class="diagram">Schema defines channels &rarr; Graph compiled from DSL/builder &rarr; Runtime executes supersteps:
+  1. Frontier nodes execute concurrently (lexicographic order)
+  2. Writes collected, reduced, committed atomically
+  3. Routers run on fresh post-commit state
+  4. Next frontier scheduled
+  5. Repeat until End() or Interrupt()</div>
+</section>
+
+<!-- 3. SCHEMA -->
+<section id="schema">
+<h2>3. Schema System</h2>
+
+<h3>HiveSchema Protocol</h3>
+<pre><code><span class="kw">public protocol</span> <span class="ty">HiveSchema</span>: <span class="ty">Sendable</span> {
+    <span class="kw">associatedtype</span> <span class="ty">Context</span>: <span class="ty">Sendable</span> = <span class="ty">Void</span>
+    <span class="kw">associatedtype</span> <span class="ty">Input</span>: <span class="ty">Sendable</span> = <span class="ty">Void</span>
+    <span class="kw">associatedtype</span> <span class="ty">InterruptPayload</span>: <span class="ty">Codable</span> &amp; <span class="ty">Sendable</span> = <span class="ty">String</span>
+    <span class="kw">associatedtype</span> <span class="ty">ResumePayload</span>: <span class="ty">Codable</span> &amp; <span class="ty">Sendable</span> = <span class="ty">String</span>
+
+    <span class="kw">static var</span> channelSpecs: [<span class="ty">AnyHiveChannelSpec</span>&lt;<span class="ty">Self</span>&gt;] { <span class="kw">get</span> }
+    <span class="kw">static func</span> <span class="fn">inputWrites</span>(_ input: <span class="ty">Input</span>, inputContext: <span class="ty">HiveInputContext</span>) <span class="kw">throws</span> -&gt; [<span class="ty">AnyHiveWrite</span>&lt;<span class="ty">Self</span>&gt;]
+}</code></pre>
+
+<h3>Channel Scopes &amp; Persistence</h3>
+<table>
+<tr><th>Scope</th><th>Store</th><th>Visibility</th></tr>
+<tr><td><code>.global</code></td><td>HiveGlobalStore</td><td>Shared across all tasks</td></tr>
+<tr><td><code>.taskLocal</code></td><td>HiveTaskLocalStore</td><td>Isolated per spawned task</td></tr>
+</table>
+
+<table>
+<tr><th>Persistence</th><th>Checkpointed?</th><th>Reset</th></tr>
+<tr><td><code>.checkpointed</code></td><td>Yes</td><td>Survives interrupt/resume</td></tr>
+<tr><td><code>.untracked</code></td><td>No</td><td>Preserved across supersteps</td></tr>
+<tr><td><code>.ephemeral</code></td><td>No</td><td>Reset each superstep</td></tr>
+</table>
+
+<h3>Built-in Reducers</h3>
+<table>
+<tr><th>Reducer</th><th>Behavior</th></tr>
+<tr><td><code>.lastWriteWins()</code></td><td>Replaces current with update</td></tr>
+<tr><td><code>.append()</code></td><td>Appends update to current collection</td></tr>
+<tr><td><code>.setUnion()</code></td><td>Union of current and update sets</td></tr>
+<tr><td><code>.dictionaryMerge(valueReducer:)</code></td><td>Merges dictionaries with conflict resolution</td></tr>
+<tr><td><code>.sum()</code></td><td>Numeric addition</td></tr>
+<tr><td><code>.min()</code> / <code>.max()</code></td><td>Comparable selection</td></tr>
+<tr><td><code>.binaryOp(_:)</code></td><td>Custom binary operator</td></tr>
+</table>
+
+<h3>Complete Schema Example</h3>
+<pre><code><span class="kw">enum</span> <span class="ty">MySchema</span>: <span class="ty">HiveSchema</span> {
+    <span class="kw">typealias</span> <span class="ty">Input</span> = <span class="ty">String</span>
+
+    <span class="kw">enum</span> <span class="ty">Channels</span> {
+        <span class="kw">static let</span> messages = <span class="ty">HiveChannelKey</span>&lt;<span class="ty">MySchema</span>, [<span class="ty">String</span>]&gt;(<span class="ty">HiveChannelID</span>(<span class="st">"messages"</span>))
+    }
+
+    <span class="kw">static var</span> channelSpecs: [<span class="ty">AnyHiveChannelSpec</span>&lt;<span class="ty">MySchema</span>&gt;] {
+        [<span class="ty">AnyHiveChannelSpec</span>(<span class="ty">HiveChannelSpec</span>(
+            key: <span class="ty">Channels</span>.messages,
+            scope: .global,
+            reducer: .<span class="fn">append</span>(),
+            updatePolicy: .multi,
+            initial: { [] },
+            codec: <span class="ty">HiveAnyCodec</span>(<span class="ty">HiveJSONCodec</span>&lt;[<span class="ty">String</span>]&gt;()),
+            persistence: .checkpointed
+        ))]
+    }
+
+    <span class="kw">static func</span> <span class="fn">inputWrites</span>(_ input: <span class="ty">String</span>, inputContext: <span class="ty">HiveInputContext</span>) <span class="kw">throws</span> -&gt; [<span class="ty">AnyHiveWrite</span>&lt;<span class="ty">MySchema</span>&gt;] {
+        [<span class="ty">AnyHiveWrite</span>(<span class="ty">Channels</span>.messages, [input])]
+    }
+}</code></pre>
+
+<h3>@HiveSchema Macro</h3>
+<pre><code><span class="kw">@HiveSchema</span>
+<span class="kw">enum</span> <span class="ty">MySchema</span>: <span class="ty">HiveSchema</span> {
+    <span class="kw">@Channel</span>(reducer: <span class="st">"lastWriteWins()"</span>, persistence: <span class="st">"untracked"</span>)
+    <span class="kw">static var</span> _answer: <span class="ty">String</span> = <span class="st">""</span>
+
+    <span class="kw">@TaskLocalChannel</span>(reducer: <span class="st">"append()"</span>, persistence: <span class="st">"checkpointed"</span>)
+    <span class="kw">static var</span> _logs: [<span class="ty">String</span>] = []
+}</code></pre>
+</section>
+
+<!-- 4. STORE -->
+<section id="store">
+<h2>4. Store Model</h2>
+<div class="diagram">  HiveSchemaRegistry (channel specs)
+            |
+    HiveInitialCache (defaults)
+       /              \
+HiveGlobalStore    HiveTaskLocalStore
+  (global)          (task-local)
+       \              /
+       HiveStoreView
+    (read-only merged &mdash; given to nodes)</div>
+
+<h3>HiveGlobalStore</h3>
+<p>Holds current value for every global channel. All tasks in a superstep see the same pre-commit snapshot. During commit, writes are sorted by <code>(taskOrdinal, emissionIndex)</code> and reduced through each channel's reducer.</p>
+
+<h3>HiveTaskLocalStore</h3>
+<p>Sparse overlay for task-local channels. Each spawned task carries its own instance. <code>get()</code> returns <code>Optional</code> (nil = use initial value).</p>
+
+<h3>HiveStoreView</h3>
+<p>Read-only merged view given to nodes via <code>input.store</code>. Global channels delegate to <code>HiveGlobalStore</code>. Task-local channels check overlay first, fall back to <code>HiveInitialCache</code>.</p>
+
+<h3>Fingerprinting</h3>
+<p><code>HiveTaskLocalFingerprint</code> computes SHA-256 digests of task-local state for deduplication and caching.</p>
+</section>
+
+<!-- 5. GRAPH -->
+<section id="graph">
+<h2>5. Graph Compilation</h2>
+<pre><code><span class="kw">var</span> builder = <span class="ty">HiveGraphBuilder</span>&lt;<span class="ty">Schema</span>&gt;(start: [<span class="ty">HiveNodeID</span>(<span class="st">"A"</span>)])
+
+builder.<span class="fn">addNode</span>(<span class="ty">HiveNodeID</span>(<span class="st">"A"</span>)) { input <span class="kw">in</span>
+    <span class="ty">HiveNodeOutput</span>(writes: [<span class="ty">AnyHiveWrite</span>(key, value)], next: .useGraphEdges)
+}
+builder.<span class="fn">addEdge</span>(from: <span class="ty">HiveNodeID</span>(<span class="st">"A"</span>), to: <span class="ty">HiveNodeID</span>(<span class="st">"B"</span>))
+builder.<span class="fn">addJoinEdge</span>(parents: [<span class="ty">HiveNodeID</span>(<span class="st">"W1"</span>), <span class="ty">HiveNodeID</span>(<span class="st">"W2"</span>)], target: <span class="ty">HiveNodeID</span>(<span class="st">"Gate"</span>))
+builder.<span class="fn">addRouter</span>(from: <span class="ty">HiveNodeID</span>(<span class="st">"A"</span>)) { view <span class="kw">in</span> .nodes([<span class="ty">HiveNodeID</span>(<span class="st">"B"</span>)]) }
+
+<span class="kw">let</span> graph = <span class="kw">try</span> builder.<span class="fn">compile</span>()</code></pre>
+
+<p><code>compile()</code> validates: no duplicate nodes, all edge targets exist, no static-edge cycles (router cycles allowed), and start nodes exist. Produces <code>CompiledHiveGraph</code> with SHA-256 versioning and Mermaid export.</p>
+</section>
+
+<!-- 6. RUNTIME -->
+<section id="runtime">
+<h2>6. Runtime Engine</h2>
+
+<h3>HiveRuntime Actor</h3>
+<pre><code><span class="kw">public actor</span> <span class="ty">HiveRuntime</span>&lt;<span class="ty">Schema</span>: <span class="ty">HiveSchema</span>&gt;: <span class="ty">Sendable</span> {
+    <span class="kw">public func</span> <span class="fn">run</span>(threadID:, input:, options:) -&gt; <span class="ty">HiveRunHandle</span>
+    <span class="kw">public func</span> <span class="fn">resume</span>(threadID:, interruptID:, payload:, options:) -&gt; <span class="ty">HiveRunHandle</span>
+    <span class="kw">public func</span> <span class="fn">fork</span>(threadID:, fromCheckpointID:, into:, options:) -&gt; <span class="ty">HiveRunHandle</span>
+    <span class="kw">public func</span> <span class="fn">getLatestStore</span>(threadID:) -&gt; <span class="ty">HiveGlobalStore</span>?
+}</code></pre>
+
+<h3>BSP Superstep Model</h3>
+<table>
+<tr><th>Phase</th><th>Action</th></tr>
+<tr><td>1. Execute</td><td>All frontier nodes run concurrently in TaskGroup</td></tr>
+<tr><td>2. Commit</td><td>Writes sorted, reduced, applied atomically</td></tr>
+<tr><td>3. Schedule</td><td>Routers run on post-commit state; next frontier assembled</td></tr>
+</table>
+
+<h3>Determinism Guarantees</h3>
+<ul>
+<li>Lexicographic ordering of nodes by <code>HiveNodeID</code></li>
+<li>Deterministic task/interrupt/checkpoint IDs via SHA-256</li>
+<li>Atomic superstep commits with stable write ordering</li>
+<li>Sorted channel iteration</li>
+<li>Optional deterministic token streaming (buffer per-task, replay in order)</li>
+</ul>
+
+<h3>Event Streaming</h3>
+<table>
+<tr><th>Category</th><th>Events</th></tr>
+<tr><td>Run</td><td><code>runStarted</code>, <code>runFinished</code>, <code>runInterrupted</code>, <code>runCancelled</code></td></tr>
+<tr><td>Step</td><td><code>stepStarted</code>, <code>stepFinished</code></td></tr>
+<tr><td>Task</td><td><code>taskStarted</code>, <code>taskFinished</code>, <code>taskFailed</code></td></tr>
+<tr><td>Writes</td><td><code>writeApplied</code></td></tr>
+<tr><td>Model</td><td><code>modelInvocationStarted</code>, <code>modelToken</code>, <code>modelInvocationFinished</code></td></tr>
+</table>
+</section>
+
+<!-- 7. DSL -->
+<section id="dsl">
+<h2>7. HiveDSL</h2>
+
+<h3>DSL Grammar</h3>
+<pre><code><span class="ty">Workflow</span>&lt;<span class="ty">Schema</span>&gt; {
+    <span class="ty">Node</span>(<span class="st">"id"</span>) { input -&gt; <span class="ty">HiveNodeOutput</span> }.<span class="fn">start</span>()
+    <span class="ty">ModelTurn</span>(<span class="st">"id"</span>, model:, messages:).<span class="fn">tools</span>(.<span class="fn">environment</span>).<span class="fn">start</span>()
+
+    <span class="ty">Edge</span>(<span class="st">"from"</span>, to: <span class="st">"to"</span>)
+    <span class="ty">Join</span>(parents: [<span class="st">"a"</span>, <span class="st">"b"</span>], to: <span class="st">"target"</span>)
+    <span class="ty">Chain</span> { .<span class="fn">start</span>(<span class="st">"A"</span>); .<span class="fn">then</span>(<span class="st">"B"</span>) }
+    <span class="ty">Branch</span>(from: <span class="st">"node"</span>) {
+        <span class="ty">Branch</span>.<span class="kw">case</span>(name:, when:) { <span class="fn">GoTo</span>(<span class="st">"x"</span>) }
+        <span class="ty">Branch</span>.<span class="kw">default</span> { <span class="fn">End</span>() }
+    }
+    <span class="ty">FanOut</span>(from: <span class="st">"src"</span>, to: [<span class="st">"a"</span>,<span class="st">"b"</span>], joinTo: <span class="st">"merge"</span>)
+}
+
+<span class="cm">// Inside nodes:</span>
+<span class="ty">Effects</span> {
+    <span class="fn">Set</span>(key, value)
+    <span class="fn">Append</span>(key, elements: [...])
+    <span class="fn">GoTo</span>(<span class="st">"node"</span>)
+    <span class="fn">UseGraphEdges</span>()
+    <span class="fn">End</span>()
+    <span class="fn">Interrupt</span>(payload)
+    <span class="fn">SpawnEach</span>(items, node: <span class="st">"worker"</span>) { item <span class="kw">in</span> localStore }
+}</code></pre>
+
+<h3>Effects Primitives</h3>
+<table>
+<tr><th>Primitive</th><th>Purpose</th></tr>
+<tr><td><code>Set(key, value)</code></td><td>Write a value to a channel</td></tr>
+<tr><td><code>Append(key, elements:)</code></td><td>Append to collection channel</td></tr>
+<tr><td><code>GoTo("node")</code></td><td>Route to specific node</td></tr>
+<tr><td><code>UseGraphEdges()</code></td><td>Follow static edges</td></tr>
+<tr><td><code>End()</code></td><td>Terminate workflow</td></tr>
+<tr><td><code>Interrupt(payload)</code></td><td>Pause, save checkpoint</td></tr>
+<tr><td><code>SpawnEach(items, node:)</code></td><td>Fan-out parallel tasks</td></tr>
+</table>
+
+<h3>Workflow Patching</h3>
+<pre><code><span class="kw">var</span> patch = <span class="ty">WorkflowPatch</span>&lt;<span class="ty">Schema</span>&gt;()
+patch.<span class="fn">replaceNode</span>(<span class="st">"B"</span>) { input <span class="kw">in</span> <span class="ty">Effects</span> { <span class="fn">End</span>() } }
+patch.<span class="fn">insertProbe</span>(<span class="st">"monitor"</span>, between: <span class="st">"A"</span>, and: <span class="st">"B"</span>) { input <span class="kw">in</span>
+    <span class="ty">Effects</span> { <span class="fn">Set</span>(probeKey, <span class="st">"observed"</span>); <span class="fn">UseGraphEdges</span>() }
+}
+<span class="kw">let</span> result = <span class="kw">try</span> patch.<span class="fn">apply</span>(to: graph)</code></pre>
+</section>
+
+<!-- 8. CHECKPOINTING -->
+<section id="checkpointing">
+<h2>8. Checkpointing</h2>
+<p>Checkpoints capture: global store, frontier tasks, join barriers, superstep index, version counters, and pending interrupts.</p>
+
+<h3>Checkpoint Policy</h3>
+<table>
+<tr><th>Policy</th><th>Behavior</th></tr>
+<tr><td><code>.disabled</code></td><td>No checkpoints</td></tr>
+<tr><td><code>.everyStep</code></td><td>Save after every superstep</td></tr>
+<tr><td><code>.every(steps: N)</code></td><td>Save every N steps</td></tr>
+<tr><td><code>.onInterrupt</code></td><td>Save only when interrupted</td></tr>
+</table>
+
+<h3>Store Protocol</h3>
+<pre><code><span class="kw">public protocol</span> <span class="ty">HiveCheckpointStore</span>: <span class="ty">Sendable</span> {
+    <span class="kw">func</span> <span class="fn">save</span>(_ checkpoint: <span class="ty">HiveCheckpoint</span>) <span class="kw">async throws</span>
+    <span class="kw">func</span> <span class="fn">loadLatest</span>(threadID: <span class="ty">HiveThreadID</span>) <span class="kw">async throws</span> -&gt; <span class="ty">HiveCheckpoint</span>?
+}</code></pre>
+</section>
+
+<!-- 9. INTERRUPTS -->
+<section id="interrupts">
+<h2>9. Interrupt/Resume Protocol</h2>
+
+<h3>Flow</h3>
+<ol>
+<li>Node returns <code>interrupt: HiveInterruptRequest(payload: ...)</code></li>
+<li>Runtime selects interrupt from lowest-ordinal task</li>
+<li>Checkpoint saved</li>
+<li>Outcome: <code>.interrupted(interruption:)</code></li>
+</ol>
+<ol start="5">
+<li>Caller invokes <code>runtime.resume(threadID:, interruptID:, payload:)</code></li>
+<li>Checkpoint loaded, interrupt ID verified</li>
+<li><code>HiveResume</code> delivered to nodes via <code>input.run.resume</code></li>
+<li>Execution continues from saved frontier</li>
+</ol>
+
+<pre><code><span class="cm">// Interrupt</span>
+<span class="ty">Node</span>(<span class="st">"review"</span>) { _ <span class="kw">in</span> <span class="ty">Effects</span> { <span class="fn">Interrupt</span>(<span class="st">"Approve?"</span>) } }
+
+<span class="cm">// Resume</span>
+<span class="kw">let</span> resumed = <span class="kw">await</span> runtime.<span class="fn">resume</span>(
+    threadID: tid,
+    interruptID: interruption.interrupt.id,
+    payload: <span class="st">"approved"</span>,
+    options: opts
+)</code></pre>
+</section>
+
+<!-- 10. INFERENCE -->
+<section id="inference">
+<h2>10. Hybrid Inference</h2>
+
+<h3>Model Client</h3>
+<pre><code><span class="kw">public protocol</span> <span class="ty">HiveModelClient</span>: <span class="ty">Sendable</span> {
+    <span class="kw">func</span> <span class="fn">complete</span>(_ request: <span class="ty">HiveChatRequest</span>) <span class="kw">async throws</span> -&gt; <span class="ty">HiveChatResponse</span>
+    <span class="kw">func</span> <span class="fn">stream</span>(_ request: <span class="ty">HiveChatRequest</span>) -&gt; <span class="ty">AsyncThrowingStream</span>&lt;<span class="ty">HiveChatStreamChunk</span>, <span class="ty">Error</span>&gt;
+}</code></pre>
+
+<h3>ReAct Loop</h3>
+<p><code>HiveModelToolLoop</code> implements bounded ReAct: send to model &rarr; if tool calls, execute tools &rarr; loop. Configurable <code>maxModelInvocations</code> and <code>toolCallOrder</code> for determinism.</p>
+
+<pre><code><span class="ty">ModelTurn</span>(<span class="st">"chat"</span>, model: <span class="st">"gpt-4"</span>, messages: [...])
+    .<span class="fn">tools</span>(.<span class="fn">environment</span>)
+    .<span class="fn">agentLoop</span>(.<span class="kw">init</span>(maxModelInvocations: <span class="num">8</span>))
+    .<span class="fn">writes</span>(to: answerKey)
+    .<span class="fn">start</span>()</code></pre>
+</section>
+
+<!-- 11. MEMORY -->
+<section id="memory">
+<h2>11. Memory System</h2>
+<pre><code><span class="kw">public protocol</span> <span class="ty">HiveMemoryStore</span>: <span class="ty">Sendable</span> {
+    <span class="kw">func</span> <span class="fn">remember</span>(namespace:, key:, text:, metadata:) <span class="kw">async throws</span>
+    <span class="kw">func</span> <span class="fn">get</span>(namespace:, key:) <span class="kw">async throws</span> -&gt; <span class="ty">HiveMemoryItem</span>?
+    <span class="kw">func</span> <span class="fn">recall</span>(namespace:, query:, limit:) <span class="kw">async throws</span> -&gt; [<span class="ty">HiveMemoryItem</span>]
+    <span class="kw">func</span> <span class="fn">delete</span>(namespace:, key:) <span class="kw">async throws</span>
+}</code></pre>
+<p><code>InMemoryHiveMemoryStore</code> provides BM25-based recall via <code>HiveInvertedIndex</code> for testing and development.</p>
+</section>
+
+<!-- 12. ADAPTERS -->
+<section id="adapters">
+<h2>12. Adapter Modules</h2>
+
+<h3>HiveConduit</h3>
+<p>Bridges <code>Conduit</code> LLM providers to <code>HiveModelClient</code>. Handles message conversion, tool definition mapping, and streaming.</p>
+
+<h3>HiveCheckpointWax</h3>
+<p>Wax-backed persistent checkpoints. JSON-encodes checkpoints as Wax frames. Supports history browsing via <code>HiveCheckpointQueryableStore</code>.</p>
+
+<h3>HiveRAGWax</h3>
+<p>Wax-backed <code>HiveMemoryStore</code>. Stores text as frames, performs keyword matching for recall.</p>
+
+</section>
+
+<!-- 13. DATA STRUCTURES -->
+<section id="data-structures">
+<h2>13. Data Structures</h2>
+
+<h3>HiveBitset</h3>
+<p>Fixed-size dynamic bitset backed by <code>[UInt64]</code>. O(1) insert/contains. Used for join barrier tracking.</p>
+
+<h3>HiveInvertedIndex</h3>
+<p>BM25-style inverted index (k1=1.2, b=0.75). Supports upsert, remove, and ranked query. Used by <code>InMemoryHiveMemoryStore</code>.</p>
+</section>
+
+<!-- 14. ERRORS -->
+<section id="errors">
+<h2>14. Error Handling</h2>
+<table>
+<tr><th>Category</th><th>Errors</th></tr>
+<tr><td>Store</td><td><code>unknownChannelID</code>, <code>scopeMismatch</code>, <code>channelTypeMismatch</code>, <code>storeValueMissing</code></td></tr>
+<tr><td>Writes</td><td><code>updatePolicyViolation</code>, <code>taskLocalWriteNotAllowed</code></td></tr>
+<tr><td>Checkpoint</td><td><code>checkpointStoreMissing</code>, <code>checkpointVersionMismatch</code>, <code>checkpointDecodeFailed</code></td></tr>
+<tr><td>Interrupt</td><td><code>interruptPending</code>, <code>noCheckpointToResume</code>, <code>resumeInterruptMismatch</code></td></tr>
+<tr><td>Model</td><td><code>modelClientMissing</code>, <code>modelStreamInvalid</code>, <code>toolRegistryMissing</code></td></tr>
+<tr><td>Graph</td><td><code>duplicateChannelID</code>, <code>staticGraphCycleDetected</code></td></tr>
+</table>
+</section>
+
+<!-- 15. TESTING -->
+<section id="testing">
+<h2>15. Testing Guide</h2>
+
+<h3>Framework</h3>
+<p>Swift Testing: <code>@Test</code>, <code>#expect</code>, <code>#require</code>. Tests are <code>async throws</code> free functions.</p>
+
+<h3>Pattern</h3>
+<ol>
+<li>Define inline <code>HiveSchema</code> enum with minimal channels</li>
+<li>Build graph imperatively via <code>HiveGraphBuilder</code></li>
+<li>Collect events from <code>AsyncThrowingStream</code></li>
+<li>Assert <strong>exact event ordering</strong> (not just presence)</li>
+</ol>
+
+<pre><code><span class="kw">@Test</span>(<span class="st">"Two parallel writers produce deterministic order"</span>)
+<span class="kw">func</span> <span class="fn">twoWriters</span>() <span class="kw">async throws</span> {
+    <span class="kw">enum</span> <span class="ty">Schema</span>: <span class="ty">HiveSchema</span> {
+        <span class="kw">static var</span> channelSpecs: [<span class="ty">AnyHiveChannelSpec</span>&lt;<span class="ty">Schema</span>&gt;] {
+            <span class="cm">// ... inline schema</span>
+        }
+    }
+
+    <span class="kw">var</span> builder = <span class="ty">HiveGraphBuilder</span>&lt;<span class="ty">Schema</span>&gt;(start: [<span class="ty">HiveNodeID</span>(<span class="st">"A"</span>), <span class="ty">HiveNodeID</span>(<span class="st">"B"</span>)])
+    <span class="cm">// ... add nodes, compile, run</span>
+
+    <span class="kw">guard case let</span> .<span class="fn">finished</span>(output, _) = outcome <span class="kw">else</span> { <span class="kw">return</span> }
+    #<span class="fn">expect</span>(<span class="kw">try</span> store.<span class="fn">get</span>(valuesKey) == [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>])
+}</code></pre>
+</section>
+
+<!-- 16. EXAMPLES -->
+<section id="examples">
+<h2>16. Examples</h2>
+
+<h3>Hello World</h3>
+<pre><code><span class="kw">let</span> graph = <span class="kw">try</span> <span class="ty">Workflow</span>&lt;<span class="ty">Schema</span>&gt; {
+    <span class="ty">Node</span>(<span class="st">"greet"</span>) { _ <span class="kw">in</span>
+        <span class="ty">Effects</span> { <span class="fn">Set</span>(messageKey, <span class="st">"Hello from Hive!"</span>); <span class="fn">End</span>() }
+    }.<span class="fn">start</span>()
+}.<span class="fn">compile</span>()</code></pre>
+
+<h3>Branching</h3>
+<pre><code><span class="ty">Branch</span>(from: <span class="st">"check"</span>) {
+    <span class="ty">Branch</span>.<span class="kw">case</span>(name: <span class="st">"high"</span>, when: { ($0.<span class="fn">get</span>(scoreKey) ?? <span class="num">0</span>) >= <span class="num">70</span> }) {
+        <span class="fn">GoTo</span>(<span class="st">"pass"</span>)
+    }
+    <span class="ty">Branch</span>.<span class="kw">default</span> { <span class="fn">GoTo</span>(<span class="st">"fail"</span>) }
+}</code></pre>
+
+<h3>Fan-Out + Join + Interrupt</h3>
+<pre><code><span class="ty">Node</span>(<span class="st">"dispatch"</span>) { _ <span class="kw">in</span>
+    <span class="ty">Effects</span> {
+        <span class="fn">SpawnEach</span>([<span class="st">"a"</span>, <span class="st">"b"</span>, <span class="st">"c"</span>], node: <span class="st">"worker"</span>) { item <span class="kw">in</span>
+            <span class="kw">var</span> local = <span class="ty">HiveTaskLocalStore</span>&lt;<span class="ty">Schema</span>&gt;.empty
+            <span class="kw">try</span>! local.<span class="fn">set</span>(itemKey, item)
+            <span class="kw">return</span> local
+        }
+        <span class="fn">End</span>()
+    }
+}.<span class="fn">start</span>()
+
+<span class="ty">Join</span>(parents: [<span class="st">"worker"</span>], to: <span class="st">"review"</span>)
+<span class="ty">Node</span>(<span class="st">"review"</span>) { _ <span class="kw">in</span> <span class="ty">Effects</span> { <span class="fn">Interrupt</span>(<span class="st">"Approve?"</span>) } }</code></pre>
+
+<h3>Agent Loop</h3>
+<pre><code><span class="ty">ModelTurn</span>(<span class="st">"chat"</span>, model: <span class="st">"gpt-4"</span>, messages: [
+    <span class="ty">HiveChatMessage</span>(id: <span class="st">"u1"</span>, role: .user, content: <span class="st">"Weather in SF?"</span>)
+])
+.<span class="fn">tools</span>(.<span class="fn">environment</span>)
+.<span class="fn">agentLoop</span>(.<span class="kw">init</span>(maxModelInvocations: <span class="num">8</span>))
+.<span class="fn">writes</span>(to: answerKey)
+.<span class="fn">start</span>()</code></pre>
+
+<h3>TinyGraph Executable</h3>
+<pre><code>swift run HiveTinyGraphExample</code></pre>
+<p>Demonstrates fan-out, join barriers, interrupt/resume, and checkpoint persistence. See <code>Sources/Hive/Examples/TinyGraph/main.swift</code>.</p>
+</section>
+
+<hr>
+<p style="color: var(--text-secondary); font-size: 13px; text-align: center; padding: 20px 0;">
+  Generated from the Hive codebase. See <a href="HIVE_SPEC.md">HIVE_SPEC.md</a> for the normative specification.
+</p>
+
+</main>
+
+<script>
+// Highlight active nav link on scroll
+const sections = document.querySelectorAll('section');
+const navLinks = document.querySelectorAll('nav a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const link = document.querySelector(`nav a[href="#${entry.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>

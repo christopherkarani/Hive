@@ -42,7 +42,8 @@ private actor QueryableStore: HiveCheckpointQueryableStore {
     }
 
     func loadCheckpoint(threadID: HiveThreadID, id: HiveCheckpointID) async throws -> HiveCheckpoint<TestSchema>? {
-        HiveCheckpoint(
+        guard id == summary.id else { return nil }
+        return HiveCheckpoint(
             id: id,
             threadID: threadID,
             runID: summary.runID,
@@ -60,13 +61,25 @@ private actor QueryableStore: HiveCheckpointQueryableStore {
 @Test("AnyHiveCheckpointStore throws unsupported for query calls when store lacks capability")
 func anyHiveCheckpointStoreUnsupportedQueryThrows() async throws {
     let store = AnyHiveCheckpointStore<TestSchema>(NonQueryableStore())
+    #expect(store.capabilities == .none)
+
     do {
         _ = try await store.listCheckpoints(threadID: HiveThreadID("thread-1"), limit: nil)
         #expect(Bool(false))
     } catch let error as HiveCheckpointQueryError {
         switch error {
-        case .unsupported:
-            #expect(Bool(true))
+        case .unsupported(let operation):
+            #expect(operation == .listCheckpoints)
+        }
+    }
+
+    do {
+        _ = try await store.loadCheckpoint(threadID: HiveThreadID("thread-1"), id: HiveCheckpointID("cp-1"))
+        #expect(Bool(false))
+    } catch let error as HiveCheckpointQueryError {
+        switch error {
+        case .unsupported(let operation):
+            #expect(operation == .loadCheckpointByID)
         }
     }
 }
@@ -74,6 +87,7 @@ func anyHiveCheckpointStoreUnsupportedQueryThrows() async throws {
 @Test("AnyHiveCheckpointStore forwards query calls when store supports capability")
 func anyHiveCheckpointStoreForwardsQueries() async throws {
     let store = AnyHiveCheckpointStore<TestSchema>(QueryableStore())
+    #expect(store.capabilities == .queryable)
     let summaries = try await store.listCheckpoints(threadID: HiveThreadID("thread-1"), limit: nil)
     #expect(summaries.map(\.id.rawValue) == ["cp-1"])
 
@@ -100,12 +114,10 @@ func hiveRuntimeCheckpointQueryHelpersRequireStore() async throws {
     do {
         _ = try await runtime.getCheckpointHistory(threadID: HiveThreadID("thread-1"), limit: nil)
         #expect(Bool(false))
-    } catch let error as HiveRuntimeError {
+    } catch let error as HiveCheckpointQueryError {
         switch error {
-        case .checkpointStoreMissing:
-            #expect(Bool(true))
-        default:
-            #expect(Bool(false))
+        case .unsupported(let operation):
+            #expect(operation == .listCheckpoints)
         }
     }
 }
@@ -134,3 +146,29 @@ func hiveRuntimeCheckpointQueryHelpersForward() async throws {
     #expect(loaded?.stepIndex == 7)
 }
 
+@Test("Checkpoint load by ID returns nil for missing checkpoint without fallback")
+func hiveRuntimeCheckpointLoadByIDMissingReturnsNil() async throws {
+    var builder = HiveGraphBuilder<TestSchema>(start: [HiveNodeID("A")])
+    builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(writes: [], next: .end) }
+    let graph = try builder.compile()
+
+    let store = AnyHiveCheckpointStore<TestSchema>(QueryableStore())
+    let runtime = try HiveRuntime(
+        graph: graph,
+        environment: HiveEnvironment(
+            context: (),
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            checkpointStore: store
+        )
+    )
+
+    let history = try await runtime.getCheckpointHistory(threadID: HiveThreadID("thread-1"), limit: nil)
+    #expect(history.map(\.id.rawValue) == ["cp-1"])
+
+    let loaded = try await runtime.getCheckpoint(
+        threadID: HiveThreadID("thread-1"),
+        id: HiveCheckpointID("missing-id")
+    )
+    #expect(loaded == nil)
+}

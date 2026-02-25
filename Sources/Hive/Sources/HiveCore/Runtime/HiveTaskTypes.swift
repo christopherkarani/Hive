@@ -45,6 +45,7 @@ public struct HiveRunContext<Schema: HiveSchema>: Sendable {
     public let attemptID: HiveRunAttemptID
     public let stepIndex: Int
     public let taskID: HiveTaskID
+    public let options: HiveRunOptions
     public let resume: HiveResume<Schema>?
 
     public init(
@@ -53,6 +54,7 @@ public struct HiveRunContext<Schema: HiveSchema>: Sendable {
         attemptID: HiveRunAttemptID,
         stepIndex: Int,
         taskID: HiveTaskID,
+        options: HiveRunOptions = HiveRunOptions(),
         resume: HiveResume<Schema>?
     ) {
         self.runID = runID
@@ -60,6 +62,7 @@ public struct HiveRunContext<Schema: HiveSchema>: Sendable {
         self.attemptID = attemptID
         self.stepIndex = stepIndex
         self.taskID = taskID
+        self.options = options
         self.resume = resume
     }
 }

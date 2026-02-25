@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import HiveCore
 
@@ -30,6 +31,19 @@ private actor ModelResponseQueue {
     }
 }
 
+private actor ModelStreamQueue {
+    private var streams: [[HiveChatStreamChunk]]
+
+    init(streams: [[HiveChatStreamChunk]]) {
+        self.streams = streams
+    }
+
+    func pop() throws -> [HiveChatStreamChunk] {
+        guard !streams.isEmpty else { throw StubError.exhaustedResponses }
+        return streams.removeFirst()
+    }
+}
+
 private struct ScriptedModelClient: HiveModelClient, Sendable {
     let recorder: ModelRequestRecorder
     let queue: ModelResponseQueue
@@ -54,6 +68,39 @@ private struct ScriptedModelClient: HiveModelClient, Sendable {
     }
 }
 
+private struct ScriptedStreamingModelClient: HiveModelClient, Sendable {
+    let recorder: ModelRequestRecorder
+    let queue: ModelStreamQueue
+
+    func complete(_ request: HiveChatRequest) async throws -> HiveChatResponse {
+        await recorder.record(request)
+        let chunks = try await queue.pop()
+        for chunk in chunks {
+            if case let .final(response) = chunk {
+                return response
+            }
+        }
+        throw StubError.exhaustedResponses
+    }
+
+    func stream(_ request: HiveChatRequest) -> AsyncThrowingStream<HiveChatStreamChunk, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    await recorder.record(request)
+                    let chunks = try await queue.pop()
+                    for chunk in chunks {
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 private actor ToolCallRecorder {
     private(set) var calls: [HiveToolCall] = []
 
@@ -63,6 +110,23 @@ private actor ToolCallRecorder {
 
     func snapshot() -> [HiveToolCall] {
         calls
+    }
+}
+
+private final class StreamKindCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var kinds: [HiveStreamEventKind] = []
+
+    func append(_ kind: HiveStreamEventKind) {
+        lock.lock()
+        kinds.append(kind)
+        lock.unlock()
+    }
+
+    func snapshot() -> [HiveStreamEventKind] {
+        lock.lock()
+        defer { lock.unlock() }
+        return kinds
     }
 }
 
@@ -290,4 +354,79 @@ func modelToolLoop_byNameThenID_ordersToolCallsDeterministically() async throws 
     #expect(recordedCalls.map(\.name) == ["alpha", "alpha", "beta"])
     #expect(recordedCalls.map(\.id) == ["1", "3", "2"])
     #expect(result.appendedMessages.map(\.id) == ["a1", "tool:1", "tool:3", "tool:2", "a2"])
+}
+
+@Test("stream mode emits model tokens and returns final response")
+func modelToolLoop_streamMode_emitsTokensAndFinalResponse() async throws {
+    let recorder = ModelRequestRecorder()
+    let queue = ModelStreamQueue(
+        streams: [[
+            .token("hel"),
+            .token("lo"),
+            .final(HiveChatResponse(message: HiveChatMessage(id: "a1", role: .assistant, content: "hello")))
+        ]]
+    )
+    let model = AnyHiveModelClient(ScriptedStreamingModelClient(recorder: recorder, queue: queue))
+    let configuration = HiveModelToolLoopConfiguration(
+        modelCallMode: .stream,
+        maxModelInvocations: 2,
+        toolCallOrder: .asEmitted
+    )
+    let collector = StreamKindCollector()
+
+    let result = try await HiveModelToolLoop.run(
+        request: makeRequest(messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")]),
+        modelClient: model,
+        toolRegistry: nil,
+        configuration: configuration,
+        emitStream: { kind, _ in
+            collector.append(kind)
+        }
+    )
+
+    let events = collector.snapshot()
+    #expect(events.count == 4)
+    let tokens = events.compactMap { event -> String? in
+        guard case let .modelToken(text) = event else { return nil }
+        return text
+    }
+    #expect(tokens == ["hel", "lo"])
+    #expect(result.finalResponse.message.id == "a1")
+    #expect(result.appendedMessages.map(\.id) == ["a1"])
+}
+
+@Test("stream mode rejects token after final chunk")
+func modelToolLoop_streamMode_tokenAfterFinal_throws() async throws {
+    let recorder = ModelRequestRecorder()
+    let queue = ModelStreamQueue(
+        streams: [[
+            .final(HiveChatResponse(message: HiveChatMessage(id: "a1", role: .assistant, content: "done"))),
+            .token("late")
+        ]]
+    )
+    let model = AnyHiveModelClient(ScriptedStreamingModelClient(recorder: recorder, queue: queue))
+    let configuration = HiveModelToolLoopConfiguration(
+        modelCallMode: .stream,
+        maxModelInvocations: 1,
+        toolCallOrder: .asEmitted
+    )
+
+    do {
+        _ = try await HiveModelToolLoop.run(
+            request: makeRequest(messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")]),
+            modelClient: model,
+            toolRegistry: nil,
+            configuration: configuration
+        )
+        #expect(Bool(false))
+    } catch let error as HiveRuntimeError {
+        switch error {
+        case .modelStreamInvalid:
+            break
+        default:
+            #expect(Bool(false))
+        }
+    } catch {
+        #expect(Bool(false))
+    }
 }

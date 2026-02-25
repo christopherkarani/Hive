@@ -4,202 +4,139 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Test Commands
 
-All source lives under `libs/hive/`. The root Package.swift points into that directory.
-
 ```sh
-# Build everything (from repo root)
-swift build
-
-# Run all tests
-swift test
-
-# Run a single test target
-swift test --filter HiveCoreTests
-swift test --filter HiveDSLTests
-swift test --filter HiveConduitTests
-swift test --filter HiveCheckpointWaxTests
-swift test --filter HiveRAGWaxTests
-swift test --filter HiveMacrosTests
-
-# Run the example graph
-swift run HiveTinyGraphExample
+swift build                              # Build all targets
+swift test                               # Run all tests
+swift test --filter HiveCoreTests        # Run a single test target
+swift test --filter HiveDSLTests         # Other targets: HiveConduitTests, HiveCheckpointWaxTests,
+                                         #   HiveRAGWaxTests, HiveTests
+swift run HiveTinyGraphExample           # Run the example executable
 ```
 
-Swift 6.2 with strict concurrency. Platforms: iOS 26+ / macOS 26+.
+Swift 6.2 toolchain required. Platforms: iOS 26+, macOS 26+.
+
+## Project Structure
+
+All source and tests live under `Sources/Hive/`:
+
+```
+Sources/Hive/
+├── Sources/
+│   ├── HiveCore/          # Zero-dependency core (schema, graph, runtime, store)
+│   ├── HiveDSL/           # Result-builder workflow DSL (depends on HiveCore)
+│   ├── HiveConduit/       # Conduit model client adapter (LLM integration)
+│   ├── HiveCheckpointWax/ # Wax-backed persistent checkpoints
+│   ├── HiveRAGWax/        # Wax-backed vector RAG
+│   └── Hive/              # Umbrella — re-exports Core + DSL + adapters
+├── Tests/
+│   ├── HiveCoreTests/     # Runtime, schema, store, graph, errors, data structures
+│   ├── HiveDSLTests/      # Workflow compilation, patching
+│   ├── HiveConduitTests/  # Model client streaming
+│   ├── HiveCheckpointWaxTests/
+│   ├── HiveRAGWaxTests/
+│   └── HiveTests/         # Integration tests
+└── Examples/TinyGraph/    # Executable example (fan-out, join, interrupt)
+```
+
+External dependencies: `Conduit` (LLM adapter) and `Wax` (checkpoint/RAG persistence).
 
 ## Architecture
 
-Hive is a deterministic graph runtime for agent workflows, inspired by LangGraph's channel/reducer/superstep model. The normative spec is in `HIVE_SPEC.md`.
+Hive executes agent workflows as **deterministic superstep graphs** using the Bulk Synchronous Parallel (BSP) model:
 
-### Module Dependency Graph
+1. **Schema** — `HiveSchema` protocol declares typed channels with reducers, scopes, and codecs
+2. **Graph** — Built via `HiveGraphBuilder` (imperative) or `Workflow<Schema> { ... }` (DSL)
+3. **Runtime** — `HiveRuntime` actor executes supersteps: frontier nodes run concurrently, writes commit atomically, routers schedule next frontier
+4. **Store** — `HiveGlobalStore` (shared state) + `HiveTaskLocalStore` (per-task overlay for fan-out) + `HiveStoreView` (read-only merged view for nodes)
+5. **Events** — Rich `AsyncThrowingStream` of typed events for observation
 
-```
-HiveCore  (zero external deps)
-  ├── HiveDSL         (result-builder workflow DSL)
-  ├── HiveConduit      (Conduit model client adapter)
-  ├── HiveCheckpointWax (Wax-backed checkpoint store)
-  └── HiveRAGWax       (Wax-backed RAG snippets, depends on HiveDSL)
+### HiveCore Internals (`Sources/Hive/Sources/HiveCore/`)
 
-Hive  (umbrella: re-exports HiveCore + HiveDSL + HiveConduit + HiveCheckpointWax)
-HiveMacros / HiveMacrosImpl  (swift-syntax compiler plugin macros)
-```
+| Directory | Responsibility |
+|-----------|---------------|
+| `Schema/` | Channel specs, channel keys, reducers, codecs, schema registry, type erasure |
+| `Store/` | Global store, task-local store, store view, initial cache, fingerprinting |
+| `Graph/` | Graph builder, graph description (deterministic JSON), Mermaid export, ordering, versioning |
+| `Runtime/` | Superstep execution, frontier computation, event streaming, interrupts, retry, task management |
+| `Checkpointing/` | Checkpoint format and store protocol |
+| `HybridInference/` | Model tool loop (ReAct), inference types |
+| `Memory/` | Memory store protocol, in-memory implementation |
+| `DataStructures/` | Bitset, inverted index |
+| `Errors/` | Runtime errors, error descriptions, checkpoint query errors |
 
-External dependencies: `Conduit` (LLM provider abstraction), `Wax` (on-device vector store), `swift-syntax` (macros).
+### HiveDSL Components (`Sources/Hive/Sources/HiveDSL/`)
 
-### Execution Model (BSP Supersteps)
+- `Workflow<Schema> { ... }.compile()` — Main entry point using `@resultBuilder`
+- `Node("id") { ... }.start()` — Processing step (`.start()` marks entry point)
+- `Edge`, `Join`, `Chain`, `Branch` — Routing primitives
+- `Effects { Set(...); GoTo(...); End() }` — Write + routing DSL
+- `ModelTurn` — LLM integration with tool calling and agent loops
+- `SpawnEach` — Fan-out to parallel workers with task-local state
 
-1. **Schema** (`HiveSchema` protocol) declares typed channels with reducers, scopes, and codecs
-2. **Graph** is built via `HiveGraphBuilder` (or `Workflow` DSL) and compiled into `CompiledHiveGraph`
-3. **Runtime** (`HiveRuntime` actor) executes the graph in deterministic supersteps:
-   - Each step runs all frontier tasks concurrently
-   - Writes are collected and committed atomically after all tasks complete
-   - Reducers merge multiple writes to the same channel deterministically (lexicographic node ordering)
-   - Next frontier is computed from static edges, routers, joins, and spawned tasks
-4. **Events** stream via `AsyncThrowingStream<HiveEvent, Error>` with backpressure support
-
-### Key Types and Their Roles
-
-| Type | Role |
-|------|------|
-| `HiveSchema` | Protocol defining channels and input mapping |
-| `HiveChannelSpec` | Channel metadata: scope (global/taskLocal), reducer, persistence, codec |
-| `HiveChannelKey<Schema, Value>` | Typed key for reading/writing channels |
-| `HiveGraphBuilder` | Imperative graph construction and compilation |
-| `CompiledHiveGraph` | Validated, immutable graph ready for execution |
-| `HiveRuntime` | Actor that runs the superstep loop |
-| `HiveNodeInput` / `HiveNodeOutput` | Node execution contract (reads store, returns writes + next + spawn + interrupt) |
-| `HiveGlobalStore` | Snapshot store for global-scoped channels |
-| `HiveTaskLocalStore` | Per-task overlay for fan-out (Send pattern) |
-| `HiveStoreView` | Unified read view combining global + task-local stores |
-| `HiveRunHandle` | Handle with event stream + outcome task |
-| `HiveEnvironment` | Injected context: clock, logger, model client, tools, checkpoint store |
-
-### Interrupt / Resume Flow
-
-Nodes can return `HiveInterruptRequest` in their output. The runtime pauses, saves a checkpoint, and returns `HiveRunOutcome.interrupted`. Resume via `runtime.resume(threadID:interruptID:payload:options:)` which loads the checkpoint and continues from the interrupted step.
-
-### HiveDSL (Result Builder API)
-
-`Workflow`, `Node`, `Edge`, `Join`, `Chain`, `Branch` are DSL components using `@WorkflowBuilder`. Nodes are marked as start nodes via `.start()`. The DSL compiles down to `CompiledHiveGraph` via `HiveGraphBuilder`.
-
-### Macros
-
-- `@HiveSchema` — generates `channelSpecs` from annotated properties
-- `@Channel` / `@TaskLocalChannel` — annotate channel properties with scope, reducer, persistence
-- `@WorkflowBlueprint` — generates workflow component boilerplate
-
-## Testing Conventions
-
-- Uses Swift Testing framework (`import Testing`, `@Test`)
-- Each test defines an inline `enum Schema: HiveSchema` with the exact channels needed
-- Helper patterns: `TestClock` (noop), `TestLogger` (noop), `makeEnvironment()`, `collectEvents()` for draining event streams
-- Tests verify determinism by asserting exact event ordering and store contents
-- Macro tests use `SwiftSyntaxMacrosTestSupport` for expansion assertions
-
-## Key Conventions
-
-- All public types are `Sendable`; the runtime is an `actor`
-- Routers are synchronous (`@Sendable (HiveStoreView<Schema>) -> HiveNext`)
-- Node IDs must not contain `:` or `+` (reserved for join edge canonical IDs)
-- Channel IDs, node orderings, and write application all use lexicographic ordering for determinism
-- Codecs are optional per channel; when present, used for checkpoint serialization and debug payload hashing
-- Source paths use `libs/hive/Sources/<Module>/` and `libs/hive/Tests/<Module>Tests/`
-
-## Agent Routing Protocol
-
-When delegating tasks to agents, follow this decision tree:
+### Key Execution Flow
 
 ```
-TASK RECEIVED
-│
-├─ Is it about spec interpretation or "does the spec allow X?"
-│  └─→ hive-spec-oracle (read-only, returns verdict)
-│
-├─ Is it a test-first task (TDD red phase)?
-│  └─→ hive-test-writer (writes failing test)
-│       └─ then route implementation to domain agent below
-│
-├─ Which module does it touch?
-│  ├─ HiveCore/Runtime/ or HiveRuntime.swift
-│  │  └─→ hive-runtime-dev (opus, most complex module)
-│  │
-│  ├─ HiveCore/Schema/ or HiveCore/Store/
-│  │  └─→ hive-schema-store-dev (sonnet)
-│  │
-│  ├─ HiveDSL/
-│  │  └─→ hive-dsl-dev (sonnet)
-│  │
-│  ├─ HiveConduit, HiveCheckpointWax, HiveRAGWax
-│  │  └─→ implementer (global agent, sonnet — adapter modules are thin)
-│  │
-│  ├─ HiveMacrosImpl/
-│  │  └─→ swift-god (global agent, opus — macros need deep Swift knowledge)
-│  │
-│  └─ Unclear / cross-cutting
-│     └─→ context-builder first → then re-route
-│
-├─ Is it a code review?
-│  └─→ swift-code-reviewer (global) + hive-spec-oracle (project)
-│       (run in parallel, merge findings)
-│
-├─ Does it need building/debugging?
-│  └─→ swift-debug-agent (global, has XcodeBuild MCP)
-│
-└─ Is it documentation?
-   └─→ documenter (global, haiku)
+Schema defines channels → Graph compiled from DSL/builder → Runtime executes supersteps:
+  1. Frontier nodes execute concurrently (lexicographic order for determinism)
+  2. Writes collected, reduced, committed atomically
+  3. Routers run on fresh post-commit state
+  4. Next frontier scheduled
+  5. Repeat until End() or Interrupt()
 ```
 
-**Context handoff template** (use when delegating to agents):
-```
-## Context for [agent-name]
+## Determinism Guarantees
 
-**Task:** [one-line description]
-**Spec Verdict:** [from oracle, if consulted]
-**Failing Test:** [from test-writer, if TDD]
-**Files to Modify:** [specific paths]
-**Constraints:** [from previous agents]
-**Acceptance Criteria:** [from user or test assertions]
-```
+Hive's core invariant: **same input → same output, same event trace**. This is achieved through:
 
-## Common Tasks → Agent Mapping
+- **Lexicographic ordering** of node execution and write application by `HiveNodeID`
+- **Atomic superstep commits** — all frontier writes apply together
+- **Deterministic reducers** — associative merge strategies (`.lastWriteWins()`, `.append()`, `.setUnion()`)
+- **Golden tests** — graph descriptions produce immutable JSON for regression testing
 
-| Task | Primary Agent | Support Agent | Skill |
-|------|--------------|---------------|-------|
-| Add new reducer | hive-schema-store-dev | hive-spec-oracle | /hive-test |
-| Add new node type | hive-dsl-dev | hive-test-writer | /hive-workflow |
-| Fix runtime bug | hive-runtime-dev | swift-debug-agent | — |
-| Add checkpoint feature | hive-runtime-dev | hive-spec-oracle | /hive-verify |
-| New channel type | hive-schema-store-dev | hive-spec-oracle | /hive-schema |
-| DSL enhancement | hive-dsl-dev | hive-test-writer | /hive-workflow |
-| Macro improvement | swift-god (global) | hive-test-writer | — |
-| Code review | swift-code-reviewer | hive-spec-oracle | /hive-verify |
-| New integration adapter | implementer (global) | hive-test-writer | /hive-test |
+When writing tests, assert exact event ordering, not just presence.
 
-## Hive-Specific Pitfalls
+## Test Patterns
 
-- **Determinism breaks silently.** Any change to node ordering, reducer application, or frontier computation can break determinism. Always test with multi-writer scenarios and assert exact event sequences.
-- **HiveRuntime.swift is ~90KB.** Read the specific section you need (MARK sections), don't try to grok the whole file.
-- **Node IDs must not contain `:` or `+`.** These are reserved for join edge canonical IDs. Validation exists in graph compilation but not at runtime.
-- **Routers are synchronous.** `@Sendable (HiveStoreView<Schema>) -> HiveNext` — don't make them async or they'll break the step algorithm.
-- **Task-local stores overlay global.** Reads from `HiveStoreView` check task-local first, then fall through to global. Writes to task-local channels from non-task contexts are errors.
-- **Checkpoint atomicity.** If `checkpointStore.save()` throws, the step MUST NOT commit. This is a spec MUST requirement (§12).
-- **Codec presence affects persistence.** Channels without codecs cannot be checkpointed. If a test needs checkpoint/resume, ensure all relevant channels have codecs.
+Tests use **Swift Testing** (`@Test`, `#expect`, `#require`). Key conventions:
 
-## TDD Workflow with Hive Agents
+1. **Inline schemas** — Each test file defines a minimal `HiveSchema` enum with only needed channels
+2. **Build graph imperatively** — Use `HiveGraphBuilder<Schema>` for test clarity
+3. **Collect events** — Drain the runtime's `AsyncThrowingStream` into an array
+4. **Assert deterministic ordering** — Verify exact event sequence (superstep, task, write order)
+5. **Checkpoint round-trips** — Save/load cycle verification for resumable workflows
 
-1. **Spec Check** — Invoke `hive-spec-oracle` or `/hive-verify` to confirm the feature is spec-compliant
-2. **Red** — Invoke `hive-test-writer` or `/hive-test` to write failing tests
-3. **Green** — Route to the domain agent (hive-runtime-dev, hive-schema-store-dev, or hive-dsl-dev)
-4. **Build** — Run `swift build` and `swift test --filter <target>` via swift-debug-agent if errors occur
-5. **Review** — Invoke `swift-code-reviewer` + `hive-spec-oracle` in parallel
-6. **Iterate** — Fix review findings, re-run tests
+The `HiveCoreTests` target has a compiler flag: `HIVE_V11_TRIGGERS`.
 
-## Conflict Resolution
+## Channel Scopes and Persistence
 
-| Conflict | Resolution |
-|----------|------------|
-| Spec oracle says VIOLATION, dev agent disagrees | **Spec oracle wins.** The spec is normative. |
-| Two agents modify the same file | **Sequential execution.** Never run two write-agents on the same file in parallel. |
-| Test writer and implementer disagree on behavior | **Test wins** (TDD). Implementation must satisfy the test. |
-| Code reviewer flags intentional design choice | **Escalate to user.** Present both perspectives. |
-| Cross-module change (Schema + Runtime + DSL) | **Sequence by dependency:** Schema → Runtime → DSL. Each runs after the previous completes. |
+| Scope | Behavior |
+|-------|----------|
+| Global | Shared across all tasks, visible to all nodes |
+| Task-local | Per-task overlay from `SpawnEach`, isolated from siblings |
+
+| Persistence | Behavior |
+|-------------|----------|
+| `.checkpointed` | Saved in checkpoint snapshots |
+| `.untracked` | Not included in checkpoints |
+| `.ephemeral` | Reset at each superstep boundary |
+
+## Interrupt/Resume Protocol
+
+1. Node emits `Interrupt(payload)` → runtime saves checkpoint (store + frontier + join barriers + superstep index)
+2. Resume via `runtime.resume(threadID:, interruptID:, payload:, options:)`
+3. Typed `Schema.ResumePayload` available in next node via `input.run.resume`
+
+## Specification
+
+`HIVE_SPEC.md` is the normative source of truth for runtime behavior. Implementation follows the spec — not the other way around. Use RFC 2119 keywords (MUST/SHOULD/MAY) when referencing spec requirements.
+
+## Claude Code Skills
+
+Available via `/hive`, `/hive-test`, `/hive-schema`, `/hive-workflow`, `/hive-verify`. Use these for scaffolding tests, generating schemas, creating workflows, and verifying spec compliance.
+
+## Conventions
+
+- Swift 6.2 strict concurrency: all public types are `Sendable`
+- Node IDs are strings — use lexicographically sortable names for deterministic ordering
+- The `Hive` umbrella product is batteries-included; use `HiveCore` alone for minimal dependency
+- Do not edit plan documents in `tasks/` or `.claude/plans/`

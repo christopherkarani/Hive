@@ -7,12 +7,19 @@ public actor InMemoryHiveMemoryStore: HiveMemoryStore {
 
     public init() {}
 
+    private func escapePathComponent(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "%", with: "%25")
+            .replacingOccurrences(of: "/", with: "%2F")
+            .replacingOccurrences(of: "#", with: "%23")
+    }
+
     private func storageKey(namespace: [String], key: String) -> String {
-        (namespace + [key]).joined(separator: "/")
+        namespaceKey(namespace) + "#" + escapePathComponent(key)
     }
 
     private func namespaceKey(_ namespace: [String]) -> String {
-        namespace.joined(separator: "/")
+        namespace.map(escapePathComponent).joined(separator: "/")
     }
 
     public func remember(namespace: [String], key: String, text: String, metadata: [String: String]) async throws {
@@ -34,7 +41,7 @@ public actor InMemoryHiveMemoryStore: HiveMemoryStore {
         let nsKey = namespaceKey(namespace)
         guard let index = indexesByNamespace[nsKey] else { return [] }
 
-        let prefix = namespace.joined(separator: "/") + "/"
+        let prefix = nsKey + "#"
         let queryTerms = HiveInvertedIndex.tokenize(query)
         let ranked = index.query(terms: queryTerms, limit: limit)
         var results: [HiveMemoryItem] = []

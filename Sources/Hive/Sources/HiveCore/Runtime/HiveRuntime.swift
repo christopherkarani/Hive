@@ -2,20 +2,8 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-// MARK: - HiveStateSnapshot
-
-/// Point-in-time snapshot of a thread's state.
-/// Mirrors LangGraph's `graph.get_state(config)` return value.
-public struct HiveStateSnapshot<Schema: HiveSchema>: Sendable {
-    /// Global channel values at this point in time.
-    public let store: HiveGlobalStore<Schema>
-    /// Checkpoint this snapshot was loaded from, if state was restored from disk.
-    public let checkpoint: HiveCheckpointSummary?
-    /// Node IDs scheduled to execute in the next superstep.
-    public let nextNodes: [HiveNodeID]
-    /// Superstep index at this snapshot.
-    public let stepIndex: Int
-}
+@available(*, deprecated, renamed: "HiveRuntimeStateSnapshot")
+public typealias HiveStateSnapshot<Schema: HiveSchema> = HiveRuntimeStateSnapshot<Schema>
 
 // MARK: - HiveRuntime
 
@@ -38,6 +26,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         input: Schema.Input,
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
+        do {
+            try validateRunOptions(options)
+            try validateRetryPolicies()
+            try validateRequiredCodecs()
+        } catch {
+            return makeFailFastHandle(threadID: threadID, options: options, error: error)
+        }
+
         let attemptID = HiveRunAttemptID(UUID())
         let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
         let capacity = max(1, options.eventBufferCapacity)
@@ -80,6 +76,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         payload: Schema.ResumePayload,
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
+        do {
+            try validateRunOptions(options)
+            try validateRetryPolicies()
+            try validateRequiredCodecs()
+        } catch {
+            return makeFailFastHandle(threadID: threadID, options: options, error: error)
+        }
+
         let attemptID = HiveRunAttemptID(UUID())
         let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
         let capacity = max(1, options.eventBufferCapacity)
@@ -115,6 +119,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         writes: [AnyHiveWrite<Schema>],
         options: HiveRunOptions
     ) -> HiveRunHandle<Schema> {
+        do {
+            try validateRunOptions(options)
+            try validateRetryPolicies()
+            try validateRequiredCodecs()
+        } catch {
+            return makeFailFastHandle(threadID: threadID, options: options, error: error)
+        }
+
         let attemptID = HiveRunAttemptID(UUID())
         let runID = threadStates[threadID]?.runID ?? HiveRunID(UUID())
         let capacity = max(1, options.eventBufferCapacity)
@@ -149,7 +161,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         limit: Int? = nil
     ) async throws -> [HiveCheckpointSummary] {
         guard let store = environment.checkpointStore else {
-            throw HiveRuntimeError.checkpointStoreMissing
+            throw HiveCheckpointQueryError.unsupported(operation: .listCheckpoints)
         }
         return try await store.listCheckpoints(threadID: threadID, limit: limit)
     }
@@ -159,9 +171,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         id: HiveCheckpointID
     ) async throws -> HiveCheckpoint<Schema>? {
         guard let store = environment.checkpointStore else {
-            throw HiveRuntimeError.checkpointStoreMissing
+            throw HiveCheckpointQueryError.unsupported(operation: .loadCheckpointByID)
         }
         return try await store.loadCheckpoint(threadID: threadID, id: id)
+    }
+
+    /// Returns discoverable checkpoint-query capabilities for the configured store.
+    public func checkpointCapabilities() -> HiveCheckpointStoreCapabilities {
+        environment.checkpointStore?.capabilities ?? .none
     }
 
     public func getLatestStore(threadID: HiveThreadID) -> HiveGlobalStore<Schema>? {
@@ -176,13 +193,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     /// Returns a unified state snapshot for the given thread.
     /// Checks in-memory state first (O(1)), then falls back to the checkpoint store.
     /// Returns `nil` when no state exists for the thread.
-    public func getState(threadID: HiveThreadID) async throws -> HiveStateSnapshot<Schema>? {
+    public func getState(threadID: HiveThreadID) async throws -> HiveRuntimeStateSnapshot<Schema>? {
         if let state = threadStates[threadID] {
-            return HiveStateSnapshot(
-                store: state.global,
-                checkpoint: nil,
-                nextNodes: deduplicatedNextNodes(from: state.frontier),
-                stepIndex: state.stepIndex
+            return try snapshot(
+                threadID: threadID,
+                state: state,
+                checkpointSummary: nil
             )
         }
 
@@ -197,12 +213,19 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             schemaVersion: checkpoint.schemaVersion,
             graphVersion: checkpoint.graphVersion
         )
-        return HiveStateSnapshot(
-            store: state.global,
-            checkpoint: summary,
-            nextNodes: deduplicatedNextNodes(from: state.frontier),
-            stepIndex: state.stepIndex
+        return try snapshot(
+            threadID: threadID,
+            state: state,
+            checkpointSummary: summary
         )
+    }
+
+    /// Returns accumulated fork lifecycle events emitted by this runtime instance.
+    public func getForkEventHistory(limit: Int? = nil) -> [HiveEvent] {
+        guard let limit else { return forkEventHistory }
+        if limit <= 0 { return [] }
+        if limit >= forkEventHistory.count { return forkEventHistory }
+        return Array(forkEventHistory.suffix(limit))
     }
 
     /// Returns deduplicated, lexicographically sorted node IDs from a frontier.
@@ -214,43 +237,151 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
     }
 
-    /// Forks a new thread from any historical checkpoint.
-    /// The new thread starts from the checkpoint's frontier and runs independently.
-    /// Requires the checkpoint store to support `loadCheckpoint(threadID:id:)`.
-    public func fork(
+    private func snapshot(
         threadID: HiveThreadID,
-        fromCheckpointID: HiveCheckpointID,
-        into newThreadID: HiveThreadID,
-        options: HiveRunOptions
-    ) -> HiveRunHandle<Schema> {
-        let attemptID = HiveRunAttemptID(UUID())
-        let newRunID = HiveRunID(UUID())
-        let capacity = max(1, options.eventBufferCapacity)
-        let streamController = HiveEventStreamController(capacity: capacity)
-        let events = streamController.makeStream()
+        state: ThreadState<Schema>,
+        checkpointSummary: HiveCheckpointSummary?
+    ) throws -> HiveRuntimeStateSnapshot<Schema> {
+        let globalHashes = try makeGlobalChannelPayloadHashes(from: state.global)
+        let frontierSummary = try makeFrontierSummary(from: state.frontier)
+        let interruption = try makeInterruptionSnapshot(from: state.interruption)
+        return HiveRuntimeStateSnapshot(
+            threadID: threadID,
+            runID: state.runID,
+            stepIndex: state.stepIndex,
+            interruption: interruption,
+            checkpointID: checkpointSummary?.id ?? state.latestCheckpointID,
+            checkpoint: checkpointSummary,
+            globalChannelPayloadHashesByID: globalHashes,
+            frontierSummary: frontierSummary,
+            store: state.global
+        )
+    }
 
-        let previous = threadQueues[newThreadID]
-        let outcome = Task { [weak self] in
-            if let previous {
-                await previous.value
-            }
-            guard let self else { throw CancellationError() }
-            return try await self.forkAttempt(
-                sourceThreadID: threadID,
-                fromCheckpointID: fromCheckpointID,
-                newThreadID: newThreadID,
-                newRunID: newRunID,
-                options: options,
-                attemptID: attemptID,
-                streamController: streamController
+    /// Creates an independent target thread lineage from a source checkpoint.
+    public func fork(
+        threadID sourceThreadID: HiveThreadID,
+        to newThreadID: HiveThreadID,
+        from checkpointID: HiveCheckpointID? = nil,
+        options: HiveRunOptions? = nil
+    ) async throws -> HiveForkResult<Schema> {
+        if let options {
+            try validateRunOptions(options)
+            try validateRequiredCodecs()
+        }
+
+        let attemptID = makeForkAttemptID(
+            sourceThreadID: sourceThreadID,
+            targetThreadID: newThreadID,
+            requestedCheckpointID: checkpointID
+        )
+        let provisionalRunID = makeForkRunID(
+            sourceThreadID: sourceThreadID,
+            targetThreadID: newThreadID,
+            sourceCheckpointID: checkpointID
+        )
+        var eventIndex: UInt64 = 0
+        emitForkLifecycleEvent(
+            runID: provisionalRunID,
+            attemptID: attemptID,
+            eventIndex: &eventIndex,
+            kind: .forkStarted(
+                sourceThreadID: sourceThreadID,
+                targetThreadID: newThreadID,
+                sourceCheckpointID: checkpointID
             )
-        }
+        )
 
-        threadQueues[newThreadID] = Task {
-            _ = try? await outcome.value
-        }
+        do {
+            guard let store = environment.checkpointStore else {
+                throw HiveRuntimeError.forkCheckpointStoreMissing
+            }
 
-        return HiveRunHandle(runID: newRunID, attemptID: attemptID, events: events, outcome: outcome)
+            try await validateForkTargetAvailability(newThreadID, store: store)
+
+            let sourceCheckpoint = try await resolveForkSourceCheckpoint(
+                sourceThreadID: sourceThreadID,
+                checkpointID: checkpointID,
+                store: store
+            )
+            let sourceCheckpointID = sourceCheckpoint.id
+            let targetRunID = provisionalRunID
+
+            var targetState = try decodeCheckpointForFork(sourceCheckpoint, debugPayloads: options?.debugPayloads ?? false)
+            targetState.runID = targetRunID
+            targetState.latestCheckpointID = nil
+
+            let lineage = makeForkLineage(
+                sourceThreadID: sourceThreadID,
+                sourceCheckpoint: sourceCheckpoint,
+                targetThreadID: newThreadID,
+                targetRunID: targetRunID
+            )
+
+            var targetCheckpointID: HiveCheckpointID?
+            if shouldPersistForkCheckpoint(options: options) {
+                let targetCheckpoint = try makeCheckpoint(
+                    threadID: newThreadID,
+                    state: targetState,
+                    debugPayloads: options?.debugPayloads ?? false,
+                    lineage: checkpointLineage(from: lineage)
+                )
+                try await saveCheckpoint(targetCheckpoint, to: store)
+                targetCheckpointID = targetCheckpoint.id
+                targetState.latestCheckpointID = targetCheckpoint.id
+            }
+
+            threadStates[newThreadID] = targetState
+
+            emitForkLifecycleEvent(
+                runID: targetRunID,
+                attemptID: attemptID,
+                eventIndex: &eventIndex,
+                kind: .forkCompleted(
+                    sourceThreadID: sourceThreadID,
+                    targetThreadID: newThreadID,
+                    sourceCheckpointID: sourceCheckpointID,
+                    targetCheckpointID: targetCheckpointID
+                )
+            )
+
+            return HiveForkResult(
+                sourceThreadID: sourceThreadID,
+                sourceCheckpointID: sourceCheckpointID,
+                targetThreadID: newThreadID,
+                targetCheckpointID: targetCheckpointID,
+                runID: targetRunID,
+                lineage: lineage
+            )
+        } catch let runtimeError as HiveRuntimeError {
+            emitForkLifecycleEvent(
+                runID: provisionalRunID,
+                attemptID: attemptID,
+                eventIndex: &eventIndex,
+                kind: .forkFailed(
+                    sourceThreadID: sourceThreadID,
+                    targetThreadID: newThreadID,
+                    sourceCheckpointID: checkpointID,
+                    errorCode: forkRuntimeErrorCode(runtimeError)
+                ),
+                metadata: ["errorCode": forkRuntimeErrorCode(runtimeError)]
+            )
+            throw runtimeError
+        } catch {
+            emitForkLifecycleEvent(
+                runID: provisionalRunID,
+                attemptID: attemptID,
+                eventIndex: &eventIndex,
+                kind: .forkFailed(
+                    sourceThreadID: sourceThreadID,
+                    targetThreadID: newThreadID,
+                    sourceCheckpointID: checkpointID,
+                    errorCode: "fork_unknown_error"
+                ),
+                metadata: ["errorCode": "fork_unknown_error"]
+            )
+            throw error
+        }
     }
 
     // MARK: - Private
@@ -264,6 +395,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     private var threadStates: [HiveThreadID: ThreadState<Schema>]
     private var threadQueues: [HiveThreadID: Task<Void, Never>]
+    private var forkEventHistory: [HiveEvent] = []
 
     // MARK: - Streaming Mode Helpers
 
@@ -315,6 +447,236 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 taskOrdinal: nil,
                 treatAsNonDroppable: true
             )
+        }
+    }
+
+    private func emitForkLifecycleEvent(
+        runID: HiveRunID,
+        attemptID: HiveRunAttemptID,
+        eventIndex: inout UInt64,
+        kind: HiveEventKind,
+        metadata: [String: String] = [:]
+    ) {
+        let id = HiveEventID(
+            runID: runID,
+            attemptID: attemptID,
+            eventIndex: eventIndex,
+            stepIndex: nil,
+            taskOrdinal: nil
+        )
+        forkEventHistory.append(HiveEvent(id: id, kind: kind, metadata: metadata))
+        eventIndex &+= 1
+    }
+
+    private func validateForkTargetAvailability(
+        _ targetThreadID: HiveThreadID,
+        store: AnyHiveCheckpointStore<Schema>
+    ) async throws {
+        if threadStates[targetThreadID] != nil || threadQueues[targetThreadID] != nil {
+            throw HiveRuntimeError.forkTargetThreadConflict(threadID: targetThreadID)
+        }
+
+        if try await store.loadLatest(threadID: targetThreadID) != nil {
+            throw HiveRuntimeError.forkTargetThreadConflict(threadID: targetThreadID)
+        }
+    }
+
+    private func resolveForkSourceCheckpoint(
+        sourceThreadID: HiveThreadID,
+        checkpointID: HiveCheckpointID?,
+        store: AnyHiveCheckpointStore<Schema>
+    ) async throws -> HiveCheckpoint<Schema> {
+        if let checkpointID {
+            do {
+                guard let checkpoint = try await store.loadCheckpoint(threadID: sourceThreadID, id: checkpointID) else {
+                    throw HiveRuntimeError.forkSourceCheckpointMissing(
+                        threadID: sourceThreadID,
+                        checkpointID: checkpointID
+                    )
+                }
+                return checkpoint
+            } catch let queryError as HiveCheckpointQueryError {
+                switch queryError {
+                case .unsupported(operation: _):
+                    throw HiveRuntimeError.forkCheckpointQueryUnsupported
+                }
+            }
+        }
+
+        guard let latest = try await store.loadLatest(threadID: sourceThreadID) else {
+            throw HiveRuntimeError.forkSourceCheckpointMissing(threadID: sourceThreadID, checkpointID: nil)
+        }
+        return latest
+    }
+
+    private func decodeCheckpointForFork(
+        _ checkpoint: HiveCheckpoint<Schema>,
+        debugPayloads: Bool
+    ) throws -> ThreadState<Schema> {
+        do {
+            return try decodeCheckpoint(checkpoint, debugPayloads: debugPayloads)
+        } catch let runtimeError as HiveRuntimeError {
+            switch runtimeError {
+            case let .checkpointVersionMismatch(expectedSchema, expectedGraph, foundSchema, foundGraph):
+                throw HiveRuntimeError.forkSchemaGraphMismatch(
+                    expectedSchema: expectedSchema,
+                    expectedGraph: expectedGraph,
+                    foundSchema: foundSchema,
+                    foundGraph: foundGraph
+                )
+            case let .checkpointCorrupt(field, errorDescription):
+                throw HiveRuntimeError.forkMalformedCheckpoint(
+                    field: field,
+                    errorDescription: errorDescription
+                )
+            case let .checkpointDecodeFailed(channelID, errorDescription):
+                throw HiveRuntimeError.forkMalformedCheckpoint(
+                    field: "channel.\(channelID.rawValue)",
+                    errorDescription: errorDescription
+                )
+            case let .missingCodec(channelID):
+                throw HiveRuntimeError.forkMalformedCheckpoint(
+                    field: "codec.\(channelID.rawValue)",
+                    errorDescription: "missing codec"
+                )
+            default:
+                throw HiveRuntimeError.forkMalformedCheckpoint(
+                    field: "checkpoint",
+                    errorDescription: String(describing: runtimeError)
+                )
+            }
+        }
+    }
+
+    private func shouldPersistForkCheckpoint(options: HiveRunOptions?) -> Bool {
+        guard let options else { return false }
+        switch options.checkpointPolicy {
+        case .disabled:
+            return false
+        case .everyStep, .every, .onInterrupt:
+            return true
+        }
+    }
+
+    private func makeForkLineage(
+        sourceThreadID: HiveThreadID,
+        sourceCheckpoint: HiveCheckpoint<Schema>,
+        targetThreadID: HiveThreadID,
+        targetRunID: HiveRunID
+    ) -> HiveForkLineage {
+        var data = Data("HFL1".utf8)
+        data.append(0)
+        data.append(contentsOf: sourceThreadID.rawValue.utf8)
+        data.append(0)
+        data.append(contentsOf: sourceCheckpoint.id.rawValue.utf8)
+        data.append(0)
+        data.append(contentsOf: targetThreadID.rawValue.utf8)
+        data.append(0)
+        data.append(contentsOf: sourceCheckpoint.runID.rawValue.uuidString.utf8)
+        data.append(0)
+        data.append(contentsOf: targetRunID.rawValue.uuidString.utf8)
+        data.append(0)
+        data.append(contentsOf: graph.schemaVersion.utf8)
+        data.append(0)
+        data.append(contentsOf: graph.graphVersion.utf8)
+        let lineageID = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+
+        return HiveForkLineage(
+            lineageID: lineageID,
+            sourceThreadID: sourceThreadID,
+            sourceCheckpointID: sourceCheckpoint.id,
+            targetThreadID: targetThreadID,
+            sourceRunID: sourceCheckpoint.runID,
+            targetRunID: targetRunID,
+            schemaVersion: graph.schemaVersion,
+            graphVersion: graph.graphVersion,
+            createdAtNanoseconds: environment.clock.nowNanoseconds()
+        )
+    }
+
+    private func checkpointLineage(from lineage: HiveForkLineage) -> HiveCheckpointLineage {
+        HiveCheckpointLineage(
+            lineageID: lineage.lineageID,
+            sourceThreadID: lineage.sourceThreadID,
+            sourceCheckpointID: lineage.sourceCheckpointID,
+            targetThreadID: lineage.targetThreadID,
+            sourceRunID: lineage.sourceRunID,
+            targetRunID: lineage.targetRunID,
+            schemaVersion: lineage.schemaVersion,
+            graphVersion: lineage.graphVersion,
+            createdAtNanoseconds: lineage.createdAtNanoseconds
+        )
+    }
+
+    private func makeForkRunID(
+        sourceThreadID: HiveThreadID,
+        targetThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID?
+    ) -> HiveRunID {
+        HiveRunID(
+            deterministicUUID(
+                prefix: "HFORK_RUN1",
+                parts: [
+                    sourceThreadID.rawValue,
+                    targetThreadID.rawValue,
+                    sourceCheckpointID?.rawValue ?? "latest"
+                ]
+            )
+        )
+    }
+
+    private func makeForkAttemptID(
+        sourceThreadID: HiveThreadID,
+        targetThreadID: HiveThreadID,
+        requestedCheckpointID: HiveCheckpointID?
+    ) -> HiveRunAttemptID {
+        HiveRunAttemptID(
+            deterministicUUID(
+                prefix: "HFORK_ATTEMPT1",
+                parts: [
+                    sourceThreadID.rawValue,
+                    targetThreadID.rawValue,
+                    requestedCheckpointID?.rawValue ?? "latest"
+                ]
+            )
+        )
+    }
+
+    private func deterministicUUID(prefix: String, parts: [String]) -> UUID {
+        var data = Data(prefix.utf8)
+        for part in parts {
+            data.append(0)
+            data.append(contentsOf: part.utf8)
+        }
+        let digest = SHA256.hash(data: data)
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let uuidBytes = uuid_t(
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        )
+        return UUID(uuid: uuidBytes)
+    }
+
+    private func forkRuntimeErrorCode(_ runtimeError: HiveRuntimeError) -> String {
+        switch runtimeError {
+        case .forkSourceCheckpointMissing:
+            return "fork_source_checkpoint_missing"
+        case .forkCheckpointStoreMissing:
+            return "fork_checkpoint_store_missing"
+        case .forkCheckpointQueryUnsupported:
+            return "fork_checkpoint_query_unsupported"
+        case .forkTargetThreadConflict:
+            return "fork_target_thread_conflict"
+        case .forkSchemaGraphMismatch:
+            return "fork_schema_graph_mismatch"
+        case .forkMalformedCheckpoint:
+            return "fork_malformed_checkpoint"
+        default:
+            return "fork_runtime_error"
         }
     }
 
@@ -495,64 +857,74 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             checkpointedValuesByID: checkpointedGlobals
         )
 
-        var frontier: [HiveFrontierTask<Schema>] = []
-        frontier.reserveCapacity(checkpoint.frontier.count)
+        func decodeFrontier(
+            _ entries: [HiveCheckpointTask],
+            fieldPrefix: String
+        ) throws -> [HiveFrontierTask<Schema>] {
+            var frontier: [HiveFrontierTask<Schema>] = []
+            frontier.reserveCapacity(entries.count)
 
-        for entry in checkpoint.frontier {
-            guard entry.localFingerprint.count == 32 else {
-                throw HiveRuntimeError.checkpointCorrupt(
-                    field: "frontier.localFingerprint",
-                    errorDescription: "expected 32 bytes"
-                )
-            }
-
-            var overlay = HiveTaskLocalStore<Schema>(registry: registry)
-            let sortedKeys = entry.localDataByChannelID.keys.sorted(by: HiveOrdering.lexicographicallyPrecedes)
-            for key in sortedKeys {
-                let channelID = HiveChannelID(key)
-                guard let spec = registry.channelSpecsByID[channelID],
-                      spec.scope == .taskLocal else {
-                    throw HiveRuntimeError.checkpointDecodeFailed(
-                        channelID: channelID,
-                        errorDescription: "unknown task-local channel"
+            for entry in entries {
+                guard entry.localFingerprint.count == 32 else {
+                    throw HiveRuntimeError.checkpointCorrupt(
+                        field: "\(fieldPrefix).localFingerprint",
+                        errorDescription: "expected 32 bytes"
                     )
                 }
-                guard let decode = spec._decodeBox else {
-                    throw HiveRuntimeError.missingCodec(channelID: channelID)
+
+                var overlay = HiveTaskLocalStore<Schema>(registry: registry)
+                let sortedKeys = entry.localDataByChannelID.keys.sorted(by: HiveOrdering.lexicographicallyPrecedes)
+                for key in sortedKeys {
+                    let channelID = HiveChannelID(key)
+                    guard let spec = registry.channelSpecsByID[channelID],
+                          spec.scope == .taskLocal else {
+                        throw HiveRuntimeError.checkpointDecodeFailed(
+                            channelID: channelID,
+                            errorDescription: "unknown task-local channel"
+                        )
+                    }
+                    guard let decode = spec._decodeBox else {
+                        throw HiveRuntimeError.missingCodec(channelID: channelID)
+                    }
+                    guard let data = entry.localDataByChannelID[key] else { continue }
+                    do {
+                        let value = try decode(data)
+                        try overlay.setAny(value, for: channelID)
+                    } catch {
+                        throw HiveRuntimeError.checkpointDecodeFailed(
+                            channelID: channelID,
+                            errorDescription: HiveErrorDescription.describe(error, debugPayloads: debugPayloads)
+                        )
+                    }
                 }
-                guard let data = entry.localDataByChannelID[key] else { continue }
-                do {
-                    let value = try decode(data)
-                    try overlay.setAny(value, for: channelID)
-                } catch {
-                    throw HiveRuntimeError.checkpointDecodeFailed(
-                        channelID: channelID,
-                        errorDescription: HiveErrorDescription.describe(error, debugPayloads: debugPayloads)
+
+                let recomputed = try HiveTaskLocalFingerprint.digest(
+                    registry: registry,
+                    initialCache: initialCache,
+                    overlay: overlay,
+                    debugPayloads: debugPayloads
+                )
+                guard recomputed == entry.localFingerprint else {
+                    throw HiveRuntimeError.checkpointCorrupt(
+                        field: "\(fieldPrefix).localFingerprint",
+                        errorDescription: "fingerprint mismatch"
                     )
                 }
-            }
 
-            let recomputed = try HiveTaskLocalFingerprint.digest(
-                registry: registry,
-                initialCache: initialCache,
-                overlay: overlay,
-                debugPayloads: debugPayloads
-            )
-            guard recomputed == entry.localFingerprint else {
-                throw HiveRuntimeError.checkpointCorrupt(
-                    field: "frontier.localFingerprint",
-                    errorDescription: "fingerprint mismatch"
+                frontier.append(
+                    HiveFrontierTask(
+                        seed: HiveTaskSeed(nodeID: entry.nodeID, local: overlay),
+                        provenance: entry.provenance,
+                        isJoinSeed: false
+                    )
                 )
             }
 
-            frontier.append(
-                HiveFrontierTask(
-                    seed: HiveTaskSeed(nodeID: entry.nodeID, local: overlay),
-                    provenance: entry.provenance,
-                    isJoinSeed: false
-                )
-            )
+            return frontier
         }
+
+        let frontier = try decodeFrontier(checkpoint.frontier, fieldPrefix: "frontier")
+        let deferredFrontier = try decodeFrontier(checkpoint.deferredFrontier, fieldPrefix: "deferredFrontier")
 
         let expectedJoinIDs = Set(graph.joinEdges.map(\.id))
         let actualJoinIDs = Set(checkpoint.joinBarrierSeenByJoinID.keys)
@@ -677,7 +1049,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             stepIndex: checkpoint.stepIndex,
             global: global,
             frontier: frontier,
-            deferredFrontier: [],
+            deferredFrontier: deferredFrontier,
             joinSeenParents: joinSeenParents,
             interruption: checkpoint.interruption,
             latestCheckpointID: checkpoint.id,
@@ -706,14 +1078,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
         do {
             try validateRunOptions(options)
-            switch options.checkpointPolicy {
-            case .disabled:
-                break
-            case .everyStep, .every, .onInterrupt:
-                if environment.checkpointStore == nil {
-                    throw HiveRuntimeError.checkpointStoreMissing
-                }
-            }
             try validateRetryPolicies()
             try validateRequiredCodecs()
 
@@ -722,6 +1086,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
+            rebindLoadedStateRunIDIfNeeded(state: &state, to: runID, threadID: threadID)
 
             let inputContext = HiveInputContext(threadID: threadID, runID: state.runID, stepIndex: state.stepIndex)
             let inputWrites = try Schema.inputWrites(input, inputContext: inputContext)
@@ -766,8 +1131,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 emitter: emitter,
                 streamController: streamController
             )
-        } catch is RuntimeCancellation {
-            throw RuntimeCancellation()
+        } catch let cancellation as RuntimeCancellation {
+            throw cancellation
         } catch {
             streamController.finish(throwing: error)
             throw error
@@ -796,12 +1161,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             try validateRetryPolicies()
             try validateRequiredCodecs()
 
-            let state = try await loadCheckpointStateForResume(
+            var state = try await loadCheckpointStateForResume(
                 threadID: threadID,
                 interruptID: interruptID,
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
+            rebindLoadedStateRunIDIfNeeded(state: &state, to: runID, threadID: threadID)
 
             emitter.emit(kind: .runResumed(interruptID: interruptID), stepIndex: nil, taskOrdinal: nil)
 
@@ -817,68 +1183,15 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 firstStepResume: resume,
                 clearInterruptionAfterFirstStep: true
             )
-        } catch is RuntimeCancellation {
-            throw RuntimeCancellation()
+        } catch let cancellation as RuntimeCancellation {
+            throw cancellation
         } catch {
             streamController.finish(throwing: error)
             throw error
         }
     }
 
-    private func forkAttempt(
-        sourceThreadID: HiveThreadID,
-        fromCheckpointID: HiveCheckpointID,
-        newThreadID: HiveThreadID,
-        newRunID: HiveRunID,
-        options: HiveRunOptions,
-        attemptID: HiveRunAttemptID,
-        streamController: HiveEventStreamController
-    ) async throws -> HiveRunOutcome<Schema> {
-        let emitter = HiveEventEmitter(
-            runID: newRunID,
-            attemptID: attemptID,
-            streamController: streamController
-        )
-
-        emitter.emit(kind: .runStarted(threadID: newThreadID), stepIndex: nil, taskOrdinal: nil)
-
-        do {
-            try validateRunOptions(options)
-            try validateRetryPolicies()
-            try validateRequiredCodecs()
-
-            guard let store = environment.checkpointStore else {
-                throw HiveRuntimeError.checkpointStoreMissing
-            }
-            guard let checkpoint = try await store.loadCheckpoint(
-                threadID: sourceThreadID,
-                id: fromCheckpointID
-            ) else {
-                throw HiveRuntimeError.checkpointNotFound(id: fromCheckpointID)
-            }
-
-            var state = try decodeCheckpoint(checkpoint, debugPayloads: options.debugPayloads)
-            state.runID = newRunID
-            emitter.emit(kind: .checkpointLoaded(checkpointID: fromCheckpointID), stepIndex: nil, taskOrdinal: nil)
-            threadStates[newThreadID] = state
-
-            return try await executeRunLoop(
-                initialState: state,
-                threadID: newThreadID,
-                options: options,
-                attemptID: attemptID,
-                emitter: emitter,
-                streamController: streamController
-            )
-        } catch is RuntimeCancellation {
-            throw RuntimeCancellation()
-        } catch {
-            streamController.finish(throwing: error)
-            throw error
-        }
-    }
-
-    /// Shared run-loop extracted from `runAttempt`, `resumeAttempt`, and `forkAttempt`.
+    /// Shared run-loop extracted from `runAttempt` and `resumeAttempt`.
     ///
     /// Executes supersteps in a `while true` loop until the graph finishes, is interrupted,
     /// runs out of steps, or is cancelled. Handles `RuntimeCancellation` internally (returns
@@ -913,7 +1226,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             while true {
                 if Task.isCancelled {
                     let output = try buildOutput(options: options, state: state)
-                    emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
+                    emitter.emit(
+                        kind: .runCancelled(cause: .explicitRequest),
+                        stepIndex: nil,
+                        taskOrdinal: nil
+                    )
                     streamController.finish()
                     return .cancelled(output: output, checkpointID: state.latestCheckpointID)
                 }
@@ -962,7 +1279,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     guard let store = environment.checkpointStore else {
                         throw HiveRuntimeError.checkpointStoreMissing
                     }
-                    try await store.save(checkpoint)
+                    try await saveCheckpoint(checkpoint, to: store)
                     nextState.latestCheckpointID = checkpoint.id
                 }
 
@@ -1042,12 +1359,16 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 // Give the cancellation flag a fair observation point between committed steps.
                 await Task.yield()
             }
-        } catch is RuntimeCancellation {
+        } catch let cancellation as RuntimeCancellation {
             guard let state = threadStates[threadID] else {
-                throw RuntimeCancellation()
+                throw cancellation
             }
             let output = try buildOutput(options: options, state: state)
-            emitter.emit(kind: .runCancelled, stepIndex: nil, taskOrdinal: nil)
+            emitter.emit(
+                kind: .runCancelled(cause: cancellation.eventCause),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
             streamController.finish()
             return .cancelled(output: output, checkpointID: state.latestCheckpointID)
         }
@@ -1066,19 +1387,12 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             attemptID: attemptID,
             streamController: streamController
         )
+        var cancellationState: ThreadState<Schema>? = threadStates[threadID]
 
         emitter.emit(kind: .runStarted(threadID: threadID), stepIndex: nil, taskOrdinal: nil)
 
         do {
             try validateRunOptions(options)
-            switch options.checkpointPolicy {
-            case .disabled:
-                break
-            case .everyStep, .every, .onInterrupt:
-                if environment.checkpointStore == nil {
-                    throw HiveRuntimeError.checkpointStoreMissing
-                }
-            }
             try validateRetryPolicies()
             try validateRequiredCodecs()
 
@@ -1087,6 +1401,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 debugPayloads: options.debugPayloads,
                 emitter: emitter
             )
+            rebindLoadedStateRunIDIfNeeded(state: &state, to: runID, threadID: threadID)
+            cancellationState = state
             if let interruption = state.interruption {
                 throw HiveRuntimeError.interruptPending(interruptID: interruption.id)
             }
@@ -1120,7 +1436,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 guard let store = environment.checkpointStore else {
                     throw HiveRuntimeError.checkpointStoreMissing
                 }
-                try await store.save(checkpointToSave)
+                try await saveCheckpoint(checkpointToSave, to: store)
                 nextState.latestCheckpointID = checkpointToSave.id
             }
 
@@ -1170,6 +1486,18 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             emitter.emit(kind: .runFinished, stepIndex: nil, taskOrdinal: nil)
             streamController.finish()
             return .finished(output: output, checkpointID: state.latestCheckpointID)
+        } catch let cancellation as RuntimeCancellation {
+            guard let state = cancellationState ?? threadStates[threadID] else {
+                throw cancellation
+            }
+            let output = try buildOutput(options: options, state: state)
+            emitter.emit(
+                kind: .runCancelled(cause: cancellation.eventCause),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
+            streamController.finish()
+            return .cancelled(output: output, checkpointID: state.latestCheckpointID)
         } catch {
             streamController.finish(throwing: error)
             throw error
@@ -1178,20 +1506,83 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     /// Internal sentinel used to represent runtime-observed cancellation without treating arbitrary user-thrown
     /// `CancellationError` values as cancellation.
-    private struct RuntimeCancellation: Error, Sendable {}
+    private enum RuntimeCancellation: Error, Sendable {
+        case checkpointPersistenceRace
+        case executionObserved
 
-    private func validateRunOptions(_ options: HiveRunOptions) throws {
+        var eventCause: HiveRunCancellationCause {
+            switch self {
+            case .checkpointPersistenceRace:
+                return .checkpointPersistenceRace
+            case .executionObserved:
+                return .executionObserved
+            }
+        }
+    }
+
+    private func saveCheckpoint(
+        _ checkpoint: HiveCheckpoint<Schema>,
+        to store: AnyHiveCheckpointStore<Schema>
+    ) async throws {
+        do {
+            try await store.save(checkpoint)
+        } catch is CancellationError {
+            throw RuntimeCancellation.checkpointPersistenceRace
+        }
+    }
+
+    /// Ensures loaded checkpoint state uses the active run handle's run ID.
+    /// This keeps handle/event IDs and newly persisted checkpoints in sync on cold-start restores.
+    private func rebindLoadedStateRunIDIfNeeded(
+        state: inout ThreadState<Schema>,
+        to runID: HiveRunID,
+        threadID: HiveThreadID
+    ) {
+        guard state.runID != runID else { return }
+        state.runID = runID
+        threadStates[threadID] = state
+    }
+
+    public func validateRunOptions(_ options: HiveRunOptions) throws {
         guard options.maxSteps >= 0 else {
-            throw HiveRuntimeError.invalidRunOptions("maxSteps must be >= 0")
+            throw HiveRunOptionsValidationError.invalidBounds(
+                option: "maxSteps",
+                reason: "must be >= 0"
+            )
         }
         guard options.maxConcurrentTasks >= 1 else {
-            throw HiveRuntimeError.invalidRunOptions("maxConcurrentTasks must be >= 1")
+            throw HiveRunOptionsValidationError.invalidBounds(
+                option: "maxConcurrentTasks",
+                reason: "must be >= 1"
+            )
         }
         guard options.eventBufferCapacity >= 1 else {
-            throw HiveRuntimeError.invalidRunOptions("eventBufferCapacity must be >= 1")
+            throw HiveRunOptionsValidationError.invalidBounds(
+                option: "eventBufferCapacity",
+                reason: "must be >= 1"
+            )
         }
         if case let .every(steps) = options.checkpointPolicy, steps < 1 {
-            throw HiveRuntimeError.invalidRunOptions("checkpointPolicy.every requires steps >= 1")
+            throw HiveRunOptionsValidationError.invalidBounds(
+                option: "checkpointPolicy.every(steps:)",
+                reason: "steps must be >= 1"
+            )
+        }
+        if options.deterministicTokenStreaming, options.streamingMode != .events {
+            throw HiveRunOptionsValidationError.unsupportedCombination(
+                reason: "deterministicTokenStreaming is only supported when streamingMode == .events"
+            )
+        }
+        switch options.checkpointPolicy {
+        case .disabled:
+            break
+        case .everyStep, .every, .onInterrupt:
+            if environment.checkpointStore == nil {
+                throw HiveRunOptionsValidationError.missingRequiredComponent(
+                    component: "checkpointStore",
+                    reason: "checkpointPolicy requires a configured checkpoint store"
+                )
+            }
         }
         if let override = options.outputProjectionOverride {
             _ = try normalizedOutputProjection(override)
@@ -1215,7 +1606,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             }
         }
         if let invalid {
-            throw HiveRuntimeError.invalidRunOptions("invalid retry policy for node \(invalid.rawValue)")
+            throw HiveRunOptionsValidationError.unsupportedCombination(
+                reason: "invalid retry policy for node \(invalid.rawValue)"
+            )
         }
     }
 
@@ -1233,10 +1626,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         case .channels(let ids):
             for id in ids {
                 guard let spec = registry.channelSpecsByID[id] else {
-                    throw HiveRuntimeError.invalidRunOptions("output projection includes unknown channel \(id.rawValue)")
+                    throw HiveRunOptionsValidationError.unsupportedCombination(
+                        reason: "output projection includes unknown channel \(id.rawValue)"
+                    )
                 }
                 if spec.scope == .taskLocal {
-                    throw HiveRuntimeError.invalidRunOptions("output projection includes task-local channel \(id.rawValue)")
+                    throw HiveRunOptionsValidationError.unsupportedCombination(
+                        reason: "output projection includes task-local channel \(id.rawValue)"
+                    )
                 }
             }
             return normalized
@@ -1332,7 +1729,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             let expectedValueTypeID = spec.valueTypeID
             let actualValueTypeID = String(reflecting: type(of: value))
             guard expectedValueTypeID == actualValueTypeID else {
-                throw HiveRuntimeError.channelTypeMismatch(
+                throw HiveExternalWriteError.payloadTypeMismatch(
                     channelID: spec.id,
                     expectedValueTypeID: expectedValueTypeID,
                     actualValueTypeID: actualValueTypeID
@@ -1343,10 +1740,14 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         var writesByChannel: [HiveChannelID: [AnyHiveWrite<Schema>]] = [:]
         for write in writes {
             guard let spec = registry.channelSpecsByID[write.channelID] else {
-                throw HiveRuntimeError.unknownChannelID(write.channelID)
+                throw HiveExternalWriteError.unknownChannel(channelID: write.channelID)
             }
             if spec.scope != .global {
-                throw HiveRuntimeError.taskLocalWriteNotAllowed
+                throw HiveExternalWriteError.scopeMismatch(
+                    channelID: write.channelID,
+                    expected: .global,
+                    actual: spec.scope
+                )
             }
             try validateValueType(write.value, spec: spec)
             writesByChannel[write.channelID, default: []].append(write)
@@ -1356,7 +1757,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         for spec in registry.sortedChannelSpecs where spec.scope == .global {
             let channelWrites = writesByChannel[spec.id] ?? []
             if spec.updatePolicy == .single, channelWrites.count > 1 {
-                throw HiveRuntimeError.updatePolicyViolation(
+                throw HiveExternalWriteError.updatePolicyViolation(
                     channelID: spec.id,
                     policy: .single,
                     writeCount: channelWrites.count
@@ -1382,7 +1783,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
     private func makeCheckpoint(
         threadID: HiveThreadID,
         state: ThreadState<Schema>,
-        debugPayloads: Bool
+        debugPayloads: Bool,
+        lineage: HiveCheckpointLineage? = nil
     ) throws -> HiveCheckpoint<Schema> {
         let checkpointID = try makeCheckpointID(runID: state.runID, stepIndex: state.stepIndex)
 
@@ -1403,42 +1805,49 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         let taskLocalSpecs = registry.sortedChannelSpecs.filter { $0.scope == .taskLocal }
-        var checkpointFrontier: [HiveCheckpointTask] = []
-        checkpointFrontier.reserveCapacity(state.frontier.count)
+        func encodeFrontier(_ entries: [HiveFrontierTask<Schema>]) throws -> [HiveCheckpointTask] {
+            var encoded: [HiveCheckpointTask] = []
+            encoded.reserveCapacity(entries.count)
 
-        for entry in state.frontier {
-            let fingerprint = try HiveTaskLocalFingerprint.digest(
-                registry: registry,
-                initialCache: initialCache,
-                overlay: entry.seed.local,
-                debugPayloads: debugPayloads
-            )
+            for entry in entries {
+                let fingerprint = try HiveTaskLocalFingerprint.digest(
+                    registry: registry,
+                    initialCache: initialCache,
+                    overlay: entry.seed.local,
+                    debugPayloads: debugPayloads
+                )
 
-            var localDataByChannelID: [String: Data] = [:]
-            for spec in taskLocalSpecs where spec.persistence == .checkpointed {
-                guard let value = entry.seed.local.valueAny(for: spec.id) else { continue }
-                guard let encode = spec._encodeBox else {
-                    throw HiveRuntimeError.missingCodec(channelID: spec.id)
+                var localDataByChannelID: [String: Data] = [:]
+                for spec in taskLocalSpecs where spec.persistence == .checkpointed {
+                    guard let value = entry.seed.local.valueAny(for: spec.id) else { continue }
+                    guard let encode = spec._encodeBox else {
+                        throw HiveRuntimeError.missingCodec(channelID: spec.id)
+                    }
+                    do {
+                        localDataByChannelID[spec.id.rawValue] = try encode(value)
+                    } catch {
+                        throw HiveRuntimeError.checkpointEncodeFailed(
+                            channelID: spec.id,
+                            errorDescription: HiveErrorDescription.describe(error, debugPayloads: debugPayloads)
+                        )
+                    }
                 }
-                do {
-                    localDataByChannelID[spec.id.rawValue] = try encode(value)
-                } catch {
-                    throw HiveRuntimeError.checkpointEncodeFailed(
-                        channelID: spec.id,
-                        errorDescription: HiveErrorDescription.describe(error, debugPayloads: debugPayloads)
+
+                encoded.append(
+                    HiveCheckpointTask(
+                        provenance: entry.provenance,
+                        nodeID: entry.seed.nodeID,
+                        localFingerprint: fingerprint,
+                        localDataByChannelID: localDataByChannelID
                     )
-                }
+                )
             }
 
-            checkpointFrontier.append(
-                HiveCheckpointTask(
-                    provenance: entry.provenance,
-                    nodeID: entry.seed.nodeID,
-                    localFingerprint: fingerprint,
-                    localDataByChannelID: localDataByChannelID
-                )
-            )
+            return encoded
         }
+
+        let checkpointFrontier = try encodeFrontier(state.frontier)
+        let checkpointDeferredFrontier = try encodeFrontier(state.deferredFrontier)
 
         var joinBarrierSeenByJoinID: [String: [String]] = [:]
         joinBarrierSeenByJoinID.reserveCapacity(graph.joinEdges.count)
@@ -1479,14 +1888,16 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             stepIndex: state.stepIndex,
             schemaVersion: graph.schemaVersion,
             graphVersion: graph.graphVersion,
-            checkpointFormatVersion: "HCP2",
+            checkpointFormatVersion: lineage == nil ? "HCP2" : "HCP3",
             channelVersionsByChannelID: channelVersionsByChannelID,
             versionsSeenByNodeID: versionsSeenByNodeID,
             updatedChannelsLastCommit: state.updatedChannelsLastCommit.map(\.rawValue),
             globalDataByChannelID: globalDataByChannelID,
             frontier: checkpointFrontier,
+            deferredFrontier: checkpointDeferredFrontier,
             joinBarrierSeenByJoinID: joinBarrierSeenByJoinID,
-            interruption: state.interruption
+            interruption: state.interruption,
+            lineage: lineage
         )
     }
 
@@ -1556,7 +1967,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     taskOrdinal: task.ordinal
                 )
             }
-            throw RuntimeCancellation()
+            throw RuntimeCancellation.executionObserved
         }
 
         let droppedCounter = HiveDroppedEventCounter()
@@ -1646,7 +2057,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     taskOrdinal: task.ordinal
                 )
             }
-            throw RuntimeCancellation()
+            throw RuntimeCancellation.executionObserved
         }
 
         var dropped = droppedCounter.snapshot()
@@ -1749,7 +2160,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             channelVersionsByChannelID: nextState.channelVersionsByChannelID,
             versionsSeenByNodeID: nextState.versionsSeenByNodeID
         )
-        nextState.deferredFrontier = commitResult.deferredFrontier
+        nextState.deferredFrontier = state.deferredFrontier + commitResult.deferredFrontier
 
         let selectedInterrupt = try selectInterrupt(tasks: tasks, outputs: outputs)
         var checkpointToSave: HiveCheckpoint<Schema>?
@@ -2043,7 +2454,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     return result
                 }
                 if Task.isCancelled {
-                    return TaskExecutionResult(error: RuntimeCancellation())
+                    return TaskExecutionResult(error: RuntimeCancellation.executionObserved)
                 }
 
                 let delay = Self.retryDelayNanoseconds(
@@ -2055,7 +2466,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 do {
                     try await environment.clock.sleep(nanoseconds: delay)
                 } catch is CancellationError {
-                    return TaskExecutionResult(error: RuntimeCancellation())
+                    return TaskExecutionResult(error: RuntimeCancellation.executionObserved)
                 } catch {
                     return TaskExecutionResult(error: error)
                 }
@@ -2115,6 +2526,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             attemptID: attemptID,
             stepIndex: stepIndex,
             taskID: task.id,
+            options: options,
             resume: resume
         )
 
@@ -2540,6 +2952,69 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         let bytes = try canonicalBytes(for: value, spec: spec)
         let hash = SHA256.hash(data: bytes)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func makeGlobalChannelPayloadHashes(
+        from global: HiveGlobalStore<Schema>
+    ) throws -> [HiveChannelID: String] {
+        var hashes: [HiveChannelID: String] = [:]
+        hashes.reserveCapacity(registry.sortedChannelSpecs.count)
+        for spec in registry.sortedChannelSpecs where spec.scope == .global {
+            hashes[spec.id] = try payloadHash(for: spec.id, in: global)
+        }
+        return hashes
+    }
+
+    private func makeInterruptionSnapshot(
+        from interruption: HiveInterrupt<Schema>?
+    ) throws -> HiveRuntimeInterruptionSnapshot? {
+        guard let interruption else { return nil }
+        let payloadBytes: Data
+        if let stableJSON = try stableJSONDataIfEncodable(interruption.payload) {
+            payloadBytes = stableJSON
+        } else {
+            payloadBytes = Data(String(reflecting: type(of: interruption.payload)).utf8)
+        }
+        let digest = SHA256.hash(data: payloadBytes)
+        let payloadHash = digest.compactMap { String(format: "%02x", $0) }.joined()
+        return HiveRuntimeInterruptionSnapshot(
+            interruptID: interruption.id,
+            payloadHash: payloadHash
+        )
+    }
+
+    private func makeFrontierSummary(
+        from frontier: [HiveFrontierTask<Schema>]
+    ) throws -> [HiveRuntimeFrontierSummary] {
+        var summary: [HiveRuntimeFrontierSummary] = []
+        summary.reserveCapacity(frontier.count)
+        for entry in frontier {
+            let fingerprint = try HiveTaskLocalFingerprint.digest(
+                registry: registry,
+                initialCache: initialCache,
+                overlay: entry.seed.local,
+                debugPayloads: false
+            )
+            let digest = SHA256.hash(data: fingerprint)
+            let fingerprintHash = digest.compactMap { String(format: "%02x", $0) }.joined()
+            summary.append(
+                HiveRuntimeFrontierSummary(
+                    nodeID: entry.seed.nodeID,
+                    provenance: entry.provenance,
+                    taskLocalFingerprintHash: fingerprintHash
+                )
+            )
+        }
+        summary.sort { lhs, rhs in
+            if lhs.nodeID != rhs.nodeID {
+                return HiveOrdering.lexicographicallyPrecedes(lhs.nodeID.rawValue, rhs.nodeID.rawValue)
+            }
+            if lhs.provenance != rhs.provenance {
+                return HiveOrdering.lexicographicallyPrecedes(lhs.provenance.rawValue, rhs.provenance.rawValue)
+            }
+            return HiveOrdering.lexicographicallyPrecedes(lhs.taskLocalFingerprintHash, rhs.taskLocalFingerprintHash)
+        }
+        return summary
     }
 
     private func writeAppliedMetadata(

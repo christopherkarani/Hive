@@ -1,0 +1,41 @@
+name: Hive Runtime Contracts
+
+on:
+  pull_request:
+    paths:
+      - "Sources/Hive/Sources/HiveCore/**"
+      - "Sources/Hive/Tests/HiveCoreTests/**"
+      - "scripts/test-*.sh"
+      - ".github/workflows/hive-runtime-contracts.yml"
+      - "Package.swift"
+      - "Package.resolved"
+  push:
+    branches: [main]
+
+jobs:
+  contract-suite:
+    name: Contract Suite
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run contract suite
+        run: ./scripts/test-contract-suite.sh
+
+  determinism-suite:
+    name: Determinism Suite
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run determinism suite
+        run: ./scripts/test-determinism-suite.sh
+
+  full-suite:
+    name: Full Suite
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run full suite
+        run: HIVE_FULL_SUITE_TIMEOUT_SECONDS=180 ./scripts/test-full-suite.sh

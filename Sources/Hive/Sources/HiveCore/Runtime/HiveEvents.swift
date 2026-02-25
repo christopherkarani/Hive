@@ -21,13 +21,35 @@ public struct HiveEventID: Hashable, Codable, Sendable {
     }
 }
 
+/// Version marker for event-schema/replay compatibility checks.
+public enum HiveEventSchemaVersion: String, Codable, Sendable, Equatable {
+    case v0 = "HES0"
+    case v1 = "HES1"
+
+    public static let current: HiveEventSchemaVersion = .v1
+}
+
+/// Classified cancellation causes used by lifecycle events.
+public enum HiveRunCancellationCause: String, Codable, Sendable, Equatable {
+    case explicitRequest
+    case checkpointPersistenceRace
+    case executionObserved
+}
+
 /// Event emitted by the runtime event stream.
 public struct HiveEvent: Sendable {
+    public let schemaVersion: HiveEventSchemaVersion
     public let id: HiveEventID
     public let kind: HiveEventKind
     public let metadata: [String: String]
 
-    public init(id: HiveEventID, kind: HiveEventKind, metadata: [String: String]) {
+    public init(
+        schemaVersion: HiveEventSchemaVersion = .current,
+        id: HiveEventID,
+        kind: HiveEventKind,
+        metadata: [String: String]
+    ) {
+        self.schemaVersion = schemaVersion
         self.id = id
         self.kind = kind
         self.metadata = metadata
@@ -53,7 +75,20 @@ public enum HiveEventKind: Sendable {
     case runFinished
     case runInterrupted(interruptID: HiveInterruptID)
     case runResumed(interruptID: HiveInterruptID)
-    case runCancelled
+    case runCancelled(cause: HiveRunCancellationCause)
+    case forkStarted(sourceThreadID: HiveThreadID, targetThreadID: HiveThreadID, sourceCheckpointID: HiveCheckpointID?)
+    case forkCompleted(
+        sourceThreadID: HiveThreadID,
+        targetThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID,
+        targetCheckpointID: HiveCheckpointID?
+    )
+    case forkFailed(
+        sourceThreadID: HiveThreadID,
+        targetThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID?,
+        errorCode: String
+    )
 
     case stepStarted(stepIndex: Int, frontierCount: Int)
     case stepFinished(stepIndex: Int, nextFrontierCount: Int)

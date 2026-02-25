@@ -42,3 +42,64 @@ public struct HiveRunHandle<Schema: HiveSchema>: Sendable {
         self.outcome = outcome
     }
 }
+
+/// Structured lineage metadata for a forked thread.
+public struct HiveForkLineage: Sendable, Codable, Equatable {
+    public let lineageID: String
+    public let sourceThreadID: HiveThreadID
+    public let sourceCheckpointID: HiveCheckpointID
+    public let targetThreadID: HiveThreadID
+    public let sourceRunID: HiveRunID
+    public let targetRunID: HiveRunID
+    public let schemaVersion: String
+    public let graphVersion: String
+    public let createdAtNanoseconds: UInt64
+
+    public init(
+        lineageID: String,
+        sourceThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID,
+        targetThreadID: HiveThreadID,
+        sourceRunID: HiveRunID,
+        targetRunID: HiveRunID,
+        schemaVersion: String,
+        graphVersion: String,
+        createdAtNanoseconds: UInt64
+    ) {
+        self.lineageID = lineageID
+        self.sourceThreadID = sourceThreadID
+        self.sourceCheckpointID = sourceCheckpointID
+        self.targetThreadID = targetThreadID
+        self.sourceRunID = sourceRunID
+        self.targetRunID = targetRunID
+        self.schemaVersion = schemaVersion
+        self.graphVersion = graphVersion
+        self.createdAtNanoseconds = createdAtNanoseconds
+    }
+}
+
+/// Result of forking a checkpoint/thread into a new thread lineage.
+public struct HiveForkResult<Schema: HiveSchema>: Sendable {
+    public let sourceThreadID: HiveThreadID
+    public let sourceCheckpointID: HiveCheckpointID
+    public let targetThreadID: HiveThreadID
+    public let targetCheckpointID: HiveCheckpointID?
+    public let runID: HiveRunID
+    public let lineage: HiveForkLineage?
+
+    public init(
+        sourceThreadID: HiveThreadID,
+        sourceCheckpointID: HiveCheckpointID,
+        targetThreadID: HiveThreadID,
+        targetCheckpointID: HiveCheckpointID?,
+        runID: HiveRunID,
+        lineage: HiveForkLineage?
+    ) {
+        self.sourceThreadID = sourceThreadID
+        self.sourceCheckpointID = sourceCheckpointID
+        self.targetThreadID = targetThreadID
+        self.targetCheckpointID = targetCheckpointID
+        self.runID = runID
+        self.lineage = lineage
+    }
+}

@@ -8,3 +8,8 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 .wax-repo/
+
+# Docusaurus
+website/node_modules/
+website/.docusaurus/
+website/build/

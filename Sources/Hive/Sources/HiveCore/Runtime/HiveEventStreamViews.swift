@@ -6,7 +6,7 @@ public struct HiveRunEvent: Sendable, Equatable {
         case finished
         case interrupted(interruptID: HiveInterruptID)
         case resumed(interruptID: HiveInterruptID)
-        case cancelled
+        case cancelled(cause: HiveRunCancellationCause)
     }
 
     public let id: HiveEventID
@@ -107,8 +107,8 @@ public struct HiveEventStreamViews: Sendable {
                 return HiveRunEvent(id: event.id, metadata: event.metadata, kind: .interrupted(interruptID: interruptID))
             case .runResumed(let interruptID):
                 return HiveRunEvent(id: event.id, metadata: event.metadata, kind: .resumed(interruptID: interruptID))
-            case .runCancelled:
-                return HiveRunEvent(id: event.id, metadata: event.metadata, kind: .cancelled)
+            case .runCancelled(let cause):
+                return HiveRunEvent(id: event.id, metadata: event.metadata, kind: .cancelled(cause: cause))
             default:
                 return nil
             }

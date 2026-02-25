@@ -14,7 +14,7 @@ Design and ship **deterministic, testable agent graphs** in Swift 6.2 using Hive
 1. Ask 3 questions max:
    - Are we using `HiveGraphBuilder` (core) or `Workflow` (DSL)?
    - Do we need checkpointing/interrupt-resume/human approval?
-   - Do we need model/tool integration (Conduit/SwiftAgents tools), and do we need deterministic token streaming for golden tests?
+   - Do we need model/tool integration (Conduit + `HiveToolRegistry` tools), and do we need deterministic token streaming for golden tests?
 1. Propose a minimal, type-safe architecture:
    - `HiveSchema` + channel specs + reducers/update policies.
    - Graph/workflow composition (nodes/edges/joins/routers).

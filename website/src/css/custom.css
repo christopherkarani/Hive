@@ -1,0 +1,70 @@
+:root {
+  --ifm-color-primary: #f0883e;
+  --ifm-color-primary-dark: #ee7825;
+  --ifm-color-primary-darker: #e36f19;
+  --ifm-color-primary-darkest: #bb5b14;
+  --ifm-color-primary-light: #f29857;
+  --ifm-color-primary-lighter: #f4a268;
+  --ifm-color-primary-lightest: #f7bc91;
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --ifm-font-family-monospace: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo,
+    monospace;
+  --ifm-code-font-size: 90%;
+}
+
+[data-theme='dark'] {
+  --ifm-background-color: #0d1117;
+  --ifm-background-surface-color: #161b22;
+  --ifm-color-primary: #f0883e;
+  --ifm-color-primary-dark: #ee7825;
+  --ifm-color-primary-darker: #e36f19;
+  --ifm-color-primary-darkest: #bb5b14;
+  --ifm-color-primary-light: #f29857;
+  --ifm-color-primary-lighter: #f4a268;
+  --ifm-color-primary-lightest: #f7bc91;
+  --ifm-navbar-background-color: #161b22;
+  --ifm-footer-background-color: #0d1117;
+  --ifm-card-background-color: #161b22;
+  --ifm-toc-border-color: #30363d;
+  --ifm-color-emphasis-300: #30363d;
+  --ifm-hr-border-color: #30363d;
+  --docusaurus-highlighted-code-line-bg: rgba(240, 136, 62, 0.1);
+}
+
+/* Navbar logo emphasis */
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+/* Code block styling */
+[data-theme='dark'] .prism-code {
+  background-color: #161b22 !important;
+  border: 1px solid #30363d;
+}
+
+/* Table styling */
+[data-theme='dark'] table {
+  border-color: #30363d;
+}
+
+[data-theme='dark'] table th {
+  background-color: #21262d;
+}
+
+[data-theme='dark'] table td,
+[data-theme='dark'] table th {
+  border-color: #30363d;
+}
+
+/* Footer links */
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+}
+
+/* Sidebar category labels */
+.menu__list-item--collapsed .menu__link--sublist::after,
+.menu__link--sublist::after {
+  background-size: 1.2em 1.2em;
+}

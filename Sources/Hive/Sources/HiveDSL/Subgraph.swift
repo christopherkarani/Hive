@@ -25,20 +25,21 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
     private let inputMapping: @Sendable (HiveStoreView<ParentSchema>) throws -> ChildSchema.Input
     private let environmentMapping: @Sendable (HiveEnvironment<ParentSchema>) throws -> HiveEnvironment<ChildSchema>
     private let outputMapping: @Sendable (HiveRunOutcome<ChildSchema>, HiveGlobalStore<ChildSchema>) throws -> [AnyHiveWrite<ParentSchema>]
-    private let childRunOptions: HiveRunOptions
+    /// `nil` means inherit the parent run's options; non-nil fully overrides child execution options.
+    private let childRunOptionsOverride: HiveRunOptions?
     private let isStart: Bool
 
     public init(
         _ id: String,
         childGraph: CompiledHiveGraph<ChildSchema>,
-        childRunOptions: HiveRunOptions = HiveRunOptions(),
+        childRunOptions: HiveRunOptions? = nil,
         inputMapping: @escaping @Sendable (HiveStoreView<ParentSchema>) throws -> ChildSchema.Input,
         environmentMapping: @escaping @Sendable (HiveEnvironment<ParentSchema>) throws -> HiveEnvironment<ChildSchema>,
         outputMapping: @escaping @Sendable (HiveRunOutcome<ChildSchema>, HiveGlobalStore<ChildSchema>) throws -> [AnyHiveWrite<ParentSchema>]
     ) {
         self.id = HiveNodeID(id)
         self.childGraph = childGraph
-        self.childRunOptions = childRunOptions
+        self.childRunOptionsOverride = childRunOptions
         self.inputMapping = inputMapping
         self.environmentMapping = environmentMapping
         self.outputMapping = outputMapping
@@ -48,7 +49,7 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
     private init(
         id: HiveNodeID,
         childGraph: CompiledHiveGraph<ChildSchema>,
-        childRunOptions: HiveRunOptions,
+        childRunOptionsOverride: HiveRunOptions?,
         inputMapping: @escaping @Sendable (HiveStoreView<ParentSchema>) throws -> ChildSchema.Input,
         environmentMapping: @escaping @Sendable (HiveEnvironment<ParentSchema>) throws -> HiveEnvironment<ChildSchema>,
         outputMapping: @escaping @Sendable (HiveRunOutcome<ChildSchema>, HiveGlobalStore<ChildSchema>) throws -> [AnyHiveWrite<ParentSchema>],
@@ -56,7 +57,7 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
     ) {
         self.id = id
         self.childGraph = childGraph
-        self.childRunOptions = childRunOptions
+        self.childRunOptionsOverride = childRunOptionsOverride
         self.inputMapping = inputMapping
         self.environmentMapping = environmentMapping
         self.outputMapping = outputMapping
@@ -67,7 +68,7 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
         Subgraph(
             id: id,
             childGraph: childGraph,
-            childRunOptions: childRunOptions,
+            childRunOptionsOverride: childRunOptionsOverride,
             inputMapping: inputMapping,
             environmentMapping: environmentMapping,
             outputMapping: outputMapping,
@@ -80,7 +81,7 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
         let inputMapping = self.inputMapping
         let environmentMapping = self.environmentMapping
         let outputMapping = self.outputMapping
-        let childRunOptions = self.childRunOptions
+        let childRunOptionsOverride = self.childRunOptionsOverride
 
         builder.addNode(id, retryPolicy: .none) { input in
             // 1. Map parent store -> child input
@@ -94,6 +95,7 @@ public struct Subgraph<ParentSchema: HiveSchema, ChildSchema: HiveSchema>: Workf
 
             // Use a unique child thread ID derived from parent context to avoid collisions
             let childThreadID = HiveThreadID("subgraph:\(input.run.threadID.rawValue):\(input.run.stepIndex)")
+            let childRunOptions = childRunOptionsOverride ?? input.run.options
             let handle = await childRuntime.run(
                 threadID: childThreadID,
                 input: childInput,

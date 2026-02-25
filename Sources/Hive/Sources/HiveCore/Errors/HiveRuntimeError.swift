@@ -22,6 +22,17 @@ public enum HiveRuntimeError: Error, Sendable {
     case checkpointNotFound(id: HiveCheckpointID)
     case noInterruptToResume
     case resumeInterruptMismatch(expected: HiveInterruptID, found: HiveInterruptID)
+    case forkSourceCheckpointMissing(threadID: HiveThreadID, checkpointID: HiveCheckpointID?)
+    case forkCheckpointStoreMissing
+    case forkCheckpointQueryUnsupported
+    case forkTargetThreadConflict(threadID: HiveThreadID)
+    case forkSchemaGraphMismatch(
+        expectedSchema: String,
+        expectedGraph: String,
+        foundSchema: String,
+        foundGraph: String
+    )
+    case forkMalformedCheckpoint(field: String, errorDescription: String)
 
     case unknownNodeID(HiveNodeID)
     /// Attempted to access a channel ID that is not present in the schema.
