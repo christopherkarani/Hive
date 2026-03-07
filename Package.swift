@@ -16,11 +16,10 @@ let package = Package(
         .library(name: "HiveCheckpointWax", targets: ["HiveCheckpointWax"]),
         .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
         .library(name: "HiveSwiftAgents", targets: ["HiveSwiftAgents"]),
-        .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"),
-        .package(url: "https://github.com/christopherkarani/Wax.git", from: "0.1.3"),
+        .package(url: "https://github.com/christopherkarani/Conduit", "0.3.1"..<"0.4.0"),
+        .package(url: "https://github.com/christopherkarani/Wax.git", "0.1.3"..<"0.2.0"),
     ],
     targets: [
         .target(

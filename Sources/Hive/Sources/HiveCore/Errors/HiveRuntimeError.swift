@@ -59,4 +59,7 @@ public enum HiveRuntimeError: Error, Sendable {
     case modelToolLoopMaxModelInvocationsExceeded(maxModelInvocations: Int)
 
     case internalInvariantViolation(String)
+
+    /// The HiveRuntime actor was deallocated while a queued run was pending.
+    case runtimeDeallocated
 }

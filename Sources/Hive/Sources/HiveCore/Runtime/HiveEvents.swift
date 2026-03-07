@@ -54,6 +54,7 @@ public enum HiveEventKind: Sendable {
     case runInterrupted(interruptID: HiveInterruptID)
     case runResumed(interruptID: HiveInterruptID)
     case runCancelled
+    case runFailed(errorDescription: String)
 
     case stepStarted(stepIndex: Int, frontierCount: Int)
     case stepFinished(stepIndex: Int, nextFrontierCount: Int)

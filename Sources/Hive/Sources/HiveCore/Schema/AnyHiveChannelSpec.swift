@@ -12,6 +12,9 @@ public struct AnyHiveChannelSpec<Schema: HiveSchema>: Sendable {
     /// Equal to `codec?.id`, else nil.
     public let codecID: String?
 
+    /// Metatype identity for reliable cross-module type comparison.
+    public let valueObjectIdentifier: ObjectIdentifier?
+
     internal let _initialBox: @Sendable () -> any Sendable
     internal let _reduceBox: @Sendable (any Sendable, any Sendable) throws -> any Sendable
     internal let _encodeBox: (@Sendable (any Sendable) throws -> Data)?
@@ -27,6 +30,7 @@ public struct AnyHiveChannelSpec<Schema: HiveSchema>: Sendable {
         self.updatePolicy = spec.updatePolicy
         self.valueTypeID = valueTypeID
         self.codecID = spec.codec?.id
+        self.valueObjectIdentifier = ObjectIdentifier(Value.self)
 
         self._initialBox = { spec.initial() }
         self._reduceBox = { current, update in

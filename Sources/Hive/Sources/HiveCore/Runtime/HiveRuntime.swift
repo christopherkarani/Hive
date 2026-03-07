@@ -50,7 +50,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 await previous.value
             }
             guard let self else {
-                throw CancellationError()
+                throw HiveRuntimeError.runtimeDeallocated
             }
             return try await self.runAttempt(
                 threadID: threadID,
@@ -91,7 +91,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             if let previous {
                 await previous.value
             }
-            guard let self else { throw CancellationError() }
+            guard let self else { throw HiveRuntimeError.runtimeDeallocated }
             return try await self.resumeAttempt(
                 threadID: threadID,
                 interruptID: interruptID,
@@ -126,7 +126,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             if let previous {
                 await previous.value
             }
-            guard let self else { throw CancellationError() }
+            guard let self else { throw HiveRuntimeError.runtimeDeallocated }
             return try await self.applyExternalWritesAttempt(
                 threadID: threadID,
                 writes: writes,
@@ -234,7 +234,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             if let previous {
                 await previous.value
             }
-            guard let self else { throw CancellationError() }
+            guard let self else { throw HiveRuntimeError.runtimeDeallocated }
             return try await self.forkAttempt(
                 sourceThreadID: threadID,
                 fromCheckpointID: fromCheckpointID,
@@ -769,6 +769,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         } catch is RuntimeCancellation {
             throw RuntimeCancellation()
         } catch {
+            emitter.emit(
+                kind: .runFailed(errorDescription: HiveErrorDescription.describe(error, debugPayloads: options.debugPayloads)),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
             streamController.finish(throwing: error)
             throw error
         }
@@ -820,6 +825,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         } catch is RuntimeCancellation {
             throw RuntimeCancellation()
         } catch {
+            emitter.emit(
+                kind: .runFailed(errorDescription: HiveErrorDescription.describe(error, debugPayloads: options.debugPayloads)),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
             streamController.finish(throwing: error)
             throw error
         }
@@ -873,6 +883,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         } catch is RuntimeCancellation {
             throw RuntimeCancellation()
         } catch {
+            emitter.emit(
+                kind: .runFailed(errorDescription: HiveErrorDescription.describe(error, debugPayloads: options.debugPayloads)),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
             streamController.finish(throwing: error)
             throw error
         }
@@ -1171,6 +1186,11 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             streamController.finish()
             return .finished(output: output, checkpointID: state.latestCheckpointID)
         } catch {
+            emitter.emit(
+                kind: .runFailed(errorDescription: HiveErrorDescription.describe(error, debugPayloads: options.debugPayloads)),
+                stepIndex: nil,
+                taskOrdinal: nil
+            )
             streamController.finish(throwing: error)
             throw error
         }
@@ -1741,6 +1761,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         if !commitResult.writtenGlobalChannels.isEmpty {
             for channelID in commitResult.writtenGlobalChannels {
                 let current = nextState.channelVersionsByChannelID[channelID] ?? 0
+                // Wrapping addition (&+) is intentional. UInt64.max (~1.8e19) writes is
+                // unreachable in practice; wrapping avoids a trap on overflow.
                 nextState.channelVersionsByChannelID[channelID] = current &+ 1
             }
         }
