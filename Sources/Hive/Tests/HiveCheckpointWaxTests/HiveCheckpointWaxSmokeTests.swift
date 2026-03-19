@@ -1,6 +1,8 @@
 import Testing
 import HiveCheckpointWax
 
+@Suite("HiveCheckpointWaxSmoke", .serialized)
+struct HiveCheckpointWaxSmokeTests {
 @Test("HiveCheckpointWax module loads")
 func hiveCheckpointWaxModuleLoads() {
     #expect(HiveCheckpointWaxVersion.string == "0.0.0")
@@ -10,4 +12,5 @@ func hiveCheckpointWaxModuleLoads() {
 func hiveCheckpointWaxExposesHiveCoreSymbols() {
     let id = HiveChannelID("smoke")
     #expect(id.rawValue == "smoke")
+}
 }

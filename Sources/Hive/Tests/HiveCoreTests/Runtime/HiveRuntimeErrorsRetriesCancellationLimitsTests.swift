@@ -64,6 +64,8 @@ private struct MarkerError: Error, Equatable, Sendable {
 
 private struct ReducerBoom: Error, Equatable, Sendable {}
 
+@Suite("HiveRuntimeErrorsRetriesCancellationLimits", .serialized)
+struct HiveRuntimeErrorsRetriesCancellationLimitsTests {
 @Test("Multiple task failures throw smallest taskOrdinal error")
 func testMultipleTaskFailures_ThrowsEarliestOrdinalError() async throws {
     enum Schema: HiveSchema {
@@ -703,4 +705,5 @@ func testCancellationDuringStep_EmitsTaskFailedForAllFrontierTasks_InOrdinalOrde
     if let store {
         #expect(try store.get(xKey) == 0)
     }
+}
 }

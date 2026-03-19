@@ -1,4 +1,5 @@
 import Foundation
+import Foundation
 import Testing
 @testable import HiveCore
 
@@ -105,6 +106,8 @@ private extension HiveGraphBuilder {
     }
 }
 
+@Suite("HiveRuntimeChannelVersioningTrigger", .serialized)
+struct HiveRuntimeChannelVersioningTriggerTests {
 @Test("Channel versions increment once per committed step per written global channel")
 func testChannelVersions_IncrementOncePerCommittedStepPerWrittenChannel() async throws {
     enum Schema: HiveSchema {
@@ -258,14 +261,21 @@ func testRunWhenAnyOf_FiltersScheduling_WhenNoChannelsChanged() async throws {
     let aKey = HiveChannelKey<Schema, Int>(HiveChannelID("a"))
 
     final class Counter: @unchecked Sendable {
-        var count: Int = 0
+        private let lock = NSLock()
+        private var count: Int = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return count
+        }
     }
     let counter = Counter()
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
     builder.addNode(HiveNodeID("A")) { _ in
-        counter.count += 1
-        if counter.count == 1 {
+        if counter.next() == 1 {
             return HiveNodeOutput(writes: [AnyHiveWrite(aKey, 1)], next: .nodes([HiveNodeID("B")]))
         }
         return HiveNodeOutput(next: .nodes([HiveNodeID("B")]))
@@ -392,7 +402,15 @@ func testRunWhenAllOf_RequiresAllChannelsChanged() async throws {
     let aKey = HiveChannelKey<Schema, Int>(HiveChannelID("a"))
 
     final class Counter: @unchecked Sendable {
-        var count: Int = 0
+        private let lock = NSLock()
+        private var count: Int = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return count
+        }
     }
     let counter = Counter()
 
@@ -401,8 +419,7 @@ func testRunWhenAllOf_RequiresAllChannelsChanged() async throws {
     // because "b" never changes.
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
     builder.addNode(HiveNodeID("A")) { _ in
-        counter.count += 1
-        if counter.count == 1 {
+        if counter.next() == 1 {
             return HiveNodeOutput(writes: [AnyHiveWrite(aKey, 1)], next: .nodes([HiveNodeID("C")]))
         }
         return HiveNodeOutput(next: .nodes([HiveNodeID("C")]))
@@ -538,15 +555,28 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     let aKey = HiveChannelKey<Schema, Int>(HiveChannelID("a"))
 
     final class Counter: @unchecked Sendable {
-        var count: Int = 0
+        private let lock = NSLock()
+        private var count: Int = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return count
+        }
+
+        func reset() {
+            lock.lock()
+            defer { lock.unlock() }
+            count = 0
+        }
     }
     let counter = Counter()
 
     func makeGraph() throws -> CompiledHiveGraph<Schema> {
         var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
         builder.addNode(HiveNodeID("A")) { _ in
-            counter.count += 1
-            if counter.count == 1 {
+            if counter.next() == 1 {
                 return HiveNodeOutput(writes: [AnyHiveWrite(aKey, 1)], next: .nodes([HiveNodeID("B")]))
             }
             return HiveNodeOutput(next: .nodes([HiveNodeID("B")]))
@@ -558,7 +588,7 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     }
 
     // Baseline: triggers should quiesce before maxSteps.
-    counter.count = 0
+    counter.reset()
     let baselineGraph = try makeGraph()
     let baselineRuntime = try HiveRuntime(graph: baselineGraph, environment: makeEnvironment(context: ()))
     let baselineHandle = await baselineRuntime.run(
@@ -573,7 +603,7 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
     guard case .finished = baselineOutcome else { #expect(Bool(false)); return }
 
     // Checkpointed + resume: stop after step 1, then resume and expect identical task-start schedule overall.
-    counter.count = 0
+    counter.reset()
     let checkpointGraph = try makeGraph()
     let store = TestCheckpointStore<Schema>()
 
@@ -611,4 +641,5 @@ func testCheckpointResumeParity_TriggerEnabledGraph_MatchesUninterrupted() async
         stitchedStarts[step] = nodes
     }
     #expect(stitchedStarts == baselineStarts)
+}
 }

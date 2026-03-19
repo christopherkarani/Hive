@@ -47,126 +47,129 @@ private struct StubToolRegistry: HiveToolRegistry, Sendable {
     }
 }
 
-@Test("ModelTurn uses environment.model and writes output to channel")
-func modelTurnWritesOutput() async throws {
-    enum Schema: HiveSchema {
-        static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
-            let key = HiveChannelKey<Schema, String>(HiveChannelID("out"))
-            let spec = HiveChannelSpec(
-                key: key,
-                scope: .global,
-                reducer: .lastWriteWins(),
-                updatePolicy: .single,
-                initial: { "" },
-                persistence: .untracked
-            )
-            return [AnyHiveChannelSpec(spec)]
+@Suite("ModelTurn", .serialized)
+struct ModelTurnTests {
+    @Test("ModelTurn uses environment.model and writes output to channel")
+    func modelTurnWritesOutput() async throws {
+        enum Schema: HiveSchema {
+            static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
+                let key = HiveChannelKey<Schema, String>(HiveChannelID("out"))
+                let spec = HiveChannelSpec(
+                    key: key,
+                    scope: .global,
+                    reducer: .lastWriteWins(),
+                    updatePolicy: .single,
+                    initial: { "" },
+                    persistence: .untracked
+                )
+                return [AnyHiveChannelSpec(spec)]
+            }
+        }
+
+        let outKey = HiveChannelKey<Schema, String>(HiveChannelID("out"))
+        let recorder = RequestRecorder()
+        let response = HiveChatResponse(message: HiveChatMessage(id: "m1", role: .assistant, content: "hello"))
+        let stub = StubHiveModelClient(recorder: recorder, response: response)
+
+        let workflow = Workflow<Schema> {
+            ModelTurn("mt", model: "stub", messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")])
+                .writes(to: outKey)
+                .start()
+        }
+
+        let graph = try workflow.compile()
+        let env = HiveEnvironment<Schema>(
+            context: (),
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(stub)
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: env)
+        let handle = await runtime.run(threadID: HiveThreadID("mt-1"), input: (), options: HiveRunOptions())
+        _ = try await handle.outcome.value
+
+        guard let store = await runtime.getLatestStore(threadID: HiveThreadID("mt-1")) else {
+            #expect(Bool(false))
+            return
+        }
+        #expect(try store.get(outKey) == "hello")
+
+        let request = await recorder.last()
+        #expect(request?.model == "stub")
+        #expect(request?.messages.count == 1)
+        #expect(request?.tools.isEmpty == true)
+    }
+
+    @Test("ModelTurn throws a clear error when model is missing")
+    func modelTurnThrowsWhenModelMissing() async throws {
+        enum Schema: HiveSchema {
+            static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
+        }
+
+        let workflow = Workflow<Schema> {
+            ModelTurn("mt", model: "stub", messages: [])
+                .start()
+        }
+
+        let graph = try workflow.compile()
+        let env = HiveEnvironment<Schema>(
+            context: (),
+            clock: NoopClock(),
+            logger: NoopLogger()
+        )
+
+        let runtime = try HiveRuntime(graph: graph, environment: env)
+        let handle = await runtime.run(threadID: HiveThreadID("mt-missing"), input: (), options: HiveRunOptions())
+
+        do {
+            _ = try await handle.outcome.value
+            #expect(Bool(false))
+        } catch let error as HiveRuntimeError {
+            #expect({
+                if case .modelClientMissing = error { true } else { false }
+            }())
+        } catch {
+            #expect(Bool(false))
         }
     }
 
-    let outKey = HiveChannelKey<Schema, String>(HiveChannelID("out"))
-    let recorder = RequestRecorder()
-    let response = HiveChatResponse(message: HiveChatMessage(id: "m1", role: .assistant, content: "hello"))
-    let stub = StubHiveModelClient(recorder: recorder, response: response)
+    @Test("ModelTurn includes tool definitions when configured and environment.tools exists")
+    func modelTurnIncludesToolsFromEnvironment() async throws {
+        enum Schema: HiveSchema {
+            static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
+        }
 
-    let workflow = Workflow<Schema> {
-        ModelTurn("mt", model: "stub", messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")])
-            .writes(to: outKey)
-            .start()
-    }
+        let recorder = RequestRecorder()
+        let response = HiveChatResponse(message: HiveChatMessage(id: "m1", role: .assistant, content: "ok"))
+        let stub = StubHiveModelClient(recorder: recorder, response: response)
 
-    let graph = try workflow.compile()
-    let env = HiveEnvironment<Schema>(
-        context: (),
-        clock: NoopClock(),
-        logger: NoopLogger(),
-        model: AnyHiveModelClient(stub)
-    )
+        let tool = HiveToolDefinition(
+            name: "search",
+            description: "Search things",
+            parametersJSONSchema: #"{"type":"object","properties":{},"required":[]}"#
+        )
 
-    let runtime = try HiveRuntime(graph: graph, environment: env)
-    let handle = await runtime.run(threadID: HiveThreadID("mt-1"), input: (), options: HiveRunOptions())
-    _ = try await handle.outcome.value
+        let workflow = Workflow<Schema> {
+            ModelTurn("mt", model: "stub", messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")])
+                .tools(.environment)
+                .start()
+        }
 
-    guard let store = await runtime.getLatestStore(threadID: HiveThreadID("mt-1")) else {
-        #expect(Bool(false))
-        return
-    }
-    #expect(try store.get(outKey) == "hello")
+        let graph = try workflow.compile()
+        let env = HiveEnvironment<Schema>(
+            context: (),
+            clock: NoopClock(),
+            logger: NoopLogger(),
+            model: AnyHiveModelClient(stub),
+            tools: AnyHiveToolRegistry(StubToolRegistry(tools: [tool]))
+        )
 
-    let request = await recorder.last()
-    #expect(request?.model == "stub")
-    #expect(request?.messages.count == 1)
-    #expect(request?.tools.isEmpty == true)
-}
-
-@Test("ModelTurn throws a clear error when model is missing")
-func modelTurnThrowsWhenModelMissing() async throws {
-    enum Schema: HiveSchema {
-        static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
-    }
-
-    let workflow = Workflow<Schema> {
-        ModelTurn("mt", model: "stub", messages: [])
-            .start()
-    }
-
-    let graph = try workflow.compile()
-    let env = HiveEnvironment<Schema>(
-        context: (),
-        clock: NoopClock(),
-        logger: NoopLogger()
-    )
-
-    let runtime = try HiveRuntime(graph: graph, environment: env)
-    let handle = await runtime.run(threadID: HiveThreadID("mt-missing"), input: (), options: HiveRunOptions())
-
-    do {
+        let runtime = try HiveRuntime(graph: graph, environment: env)
+        let handle = await runtime.run(threadID: HiveThreadID("mt-tools"), input: (), options: HiveRunOptions())
         _ = try await handle.outcome.value
-        #expect(Bool(false))
-    } catch let error as HiveRuntimeError {
-        #expect({
-            if case .modelClientMissing = error { true } else { false }
-        }())
-    } catch {
-        #expect(Bool(false))
+
+        let request = await recorder.last()
+        #expect(request?.tools.map(\.name) == ["search"])
     }
-}
-
-@Test("ModelTurn includes tool definitions when configured and environment.tools exists")
-func modelTurnIncludesToolsFromEnvironment() async throws {
-    enum Schema: HiveSchema {
-        static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
-    }
-
-    let recorder = RequestRecorder()
-    let response = HiveChatResponse(message: HiveChatMessage(id: "m1", role: .assistant, content: "ok"))
-    let stub = StubHiveModelClient(recorder: recorder, response: response)
-
-    let tool = HiveToolDefinition(
-        name: "search",
-        description: "Search things",
-        parametersJSONSchema: #"{"type":"object","properties":{},"required":[]}"#
-    )
-
-    let workflow = Workflow<Schema> {
-        ModelTurn("mt", model: "stub", messages: [HiveChatMessage(id: "u1", role: .user, content: "hi")])
-            .tools(.environment)
-            .start()
-    }
-
-    let graph = try workflow.compile()
-    let env = HiveEnvironment<Schema>(
-        context: (),
-        clock: NoopClock(),
-        logger: NoopLogger(),
-        model: AnyHiveModelClient(stub),
-        tools: AnyHiveToolRegistry(StubToolRegistry(tools: [tool]))
-    )
-
-    let runtime = try HiveRuntime(graph: graph, environment: env)
-    let handle = await runtime.run(threadID: HiveThreadID("mt-tools"), input: (), options: HiveRunOptions())
-    _ = try await handle.outcome.value
-
-    let request = await recorder.last()
-    #expect(request?.tools.map(\.name) == ["search"])
 }

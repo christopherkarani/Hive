@@ -1,11 +1,21 @@
+import Foundation
 import Testing
 @testable import HiveCore
 
 private final class CallRecorder: @unchecked Sendable {
+    private let lock = NSLock()
     private(set) var calls: [String] = []
 
     func record(_ key: String) {
+        lock.lock()
+        defer { lock.unlock() }
         calls.append(key)
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
     }
 }
 
@@ -55,5 +65,5 @@ func hiveReducerDictionaryMergeOrdersKeys() throws {
     _ = try reducer.reduce(current: current, update: update)
 
     let expected = update.keys.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-    #expect(recorder.calls == expected)
+    #expect(recorder.snapshot() == expected)
 }

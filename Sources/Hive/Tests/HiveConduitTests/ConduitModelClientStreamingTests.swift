@@ -424,3 +424,90 @@ func conduitModelClientStreamIgnoresExtraChunksAfterFinal() async {
     #expect(finals.count == 1)
     #expect(finals.first?.message.content == "Hi")
 }
+
+@Test("ConduitModelClient attaches structured output payloads to final responses")
+func conduitModelClientStreamIncludesStructuredOutputPayload() async throws {
+    let streamChunks: [GenerationChunk] = [
+        GenerationChunk(text: #"{"answer":"Hello"}"#),
+        GenerationChunk.completion(finishReason: .stop)
+    ]
+    let result = GenerationResult(
+        text: #"{"answer":"Hello"}"#,
+        tokenCount: 2,
+        generationTime: 0,
+        tokensPerSecond: 0,
+        finishReason: .stop
+    )
+    let provider = StubTextGenerator(
+        result: result,
+        streamChunks: streamChunks,
+        streamError: nil
+    )
+    let modelID = StubModelID(rawValue: "stub-model")
+    let client = ConduitModelClient(
+        provider: provider,
+        modelIDForName: { name in
+            guard name == modelID.rawValue else { throw StubError.boom }
+            return modelID
+        },
+        messageID: { "msg-structured" }
+    )
+    let request = HiveChatRequest(
+        model: modelID.rawValue,
+        messages: [HiveChatMessage(id: "msg-structured-user", role: .user, content: "hi")],
+        tools: [],
+        structuredOutput: .jsonObject
+    )
+
+    let chunks = try await collectChunks(client.stream(request))
+    let finals = chunks.compactMap { chunk -> HiveChatResponse? in
+        if case let .final(response) = chunk { return response }
+        return nil
+    }
+
+    #expect(finals.count == 1)
+    #expect(finals.first?.message.content == #"{"answer":"Hello"}"#)
+    #expect(finals.first?.message.structuredOutput == HiveStructuredOutput(
+        format: .jsonObject,
+        json: #"{"answer":"Hello"}"#
+    ))
+}
+
+@Test("ConduitModelClient rejects invalid structured output schemas before streaming")
+func conduitModelClientRejectsInvalidStructuredOutputSchema() async {
+    let result = GenerationResult(
+        text: "ignored",
+        tokenCount: 1,
+        generationTime: 0,
+        tokensPerSecond: 0,
+        finishReason: .stop
+    )
+    let provider = StubTextGenerator(
+        result: result,
+        streamChunks: [GenerationChunk.completion(finishReason: .stop)],
+        streamError: nil
+    )
+    let modelID = StubModelID(rawValue: "stub-model")
+    let client = ConduitModelClient(
+        provider: provider,
+        modelIDForName: { name in
+            guard name == modelID.rawValue else { throw StubError.boom }
+            return modelID
+        },
+        messageID: { "msg-invalid-schema" }
+    )
+    let request = HiveChatRequest(
+        model: modelID.rawValue,
+        messages: [HiveChatMessage(id: "msg-invalid", role: .user, content: "hi")],
+        tools: [],
+        structuredOutput: .jsonSchema(name: "BadSchema", schemaJSON: "{")
+    )
+
+    let (_, error) = await collectChunksAndError(client.stream(request))
+
+    if case let .invalidStructuredOutputSchema(message)? = error as? ConduitModelClientError {
+        #expect(message.isEmpty == false)
+    } else {
+        #expect(Bool(false))
+    }
+}

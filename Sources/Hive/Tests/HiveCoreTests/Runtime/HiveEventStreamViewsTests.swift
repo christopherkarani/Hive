@@ -97,6 +97,8 @@ private func waitForSignal(
     return await signal.value()
 }
 
+@Suite("HiveEventStreamViews", .serialized)
+struct HiveEventStreamViewsTests {
 @Test("steps() filters and preserves order")
 func stepsViewFiltersAndPreservesOrder() async throws {
     let (source, continuation) = makeSourceStream()
@@ -267,4 +269,37 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
 
     let terminatedAfterFinish = await waitForSignal(terminated, maxYields: 50_000)
     #expect(terminatedAfterFinish)
+}
+
+@Test("dropping the last view releases the source pump")
+func droppingLastViewReleasesSourcePump() async throws {
+    let (source, continuation) = makeSourceStream()
+    let terminated = AsyncSignal()
+    continuation.onTermination = { @Sendable _ in
+        Task {
+            await terminated.signal()
+        }
+    }
+
+    var views: HiveEventStreamViews? = HiveEventStreamViews(source)
+    var stream: AsyncThrowingStream<HiveModelEvent, Error>? = views?.model()
+    let firstEvent: HiveModelEvent? = try await {
+        let consumerStream = stream!
+        let consumer = Task {
+            var iterator = consumerStream.makeAsyncIterator()
+            return try await iterator.next()
+        }
+
+        await Task.yield()
+        continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+        return try await consumer.value
+    }()
+    #expect(firstEvent?.id.eventIndex == 0)
+
+    stream = nil
+    views = nil
+
+    let terminatedAfterRelease = await waitForSignal(terminated, maxYields: 50_000)
+    #expect(terminatedAfterRelease)
+}
 }

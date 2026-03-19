@@ -128,6 +128,8 @@ private func sha256HexLower(_ data: Data) -> String {
     return hash.compactMap { String(format: "%02x", $0) }.joined()
 }
 
+@Suite("HiveRuntimeInterruptResumeExternalWrites", .serialized)
+struct HiveRuntimeInterruptResumeExternalWritesTests {
 @Test("Interrupt selection by smallest taskOrdinal")
 func testInterrupt_SelectsEarliestTaskOrdinal() async throws {
     enum Schema: HiveSchema {
@@ -670,7 +672,9 @@ private struct IntCodec: HiveCodec {
     func encode(_ value: Int) throws -> Data { withUnsafeBytes(of: value.bigEndian) { Data($0) } }
     func decode(_ data: Data) throws -> Int {
         guard data.count == MemoryLayout<Int>.size else { return 0 }
-        return data.withUnsafeBytes { $0.load(as: Int.self) }.bigEndian
+        var raw = Int.zero
+        _ = withUnsafeMutableBytes(of: &raw) { data.copyBytes(to: $0) }
+        return Int(bigEndian: raw)
     }
 }
 
@@ -965,4 +969,5 @@ func testApplyExternalWrites_ColdStartRestore_RebindsRunIDForNewCheckpoint() asy
     #expect(latest.stepIndex == 2)
     #expect(latest.runID == external.runID)
     #expect(latest.runID != firstRunID)
+}
 }

@@ -177,7 +177,7 @@ private func streamingModeDescription(_ mode: HiveStreamingMode) -> String {
 
 // MARK: - Tests
 
-@Suite("SubgraphComposition")
+@Suite("SubgraphComposition", .serialized)
 struct SubgraphCompositionTests {
 
     @Test("Simple passthrough: parent A -> Subgraph(child) -> parent B")
