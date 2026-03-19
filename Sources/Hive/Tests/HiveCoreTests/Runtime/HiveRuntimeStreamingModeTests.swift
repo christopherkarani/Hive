@@ -68,7 +68,7 @@ private actor TestCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
 
 // MARK: - Streaming Mode Tests
 
-@Suite("HiveRuntimeStreamingModes")
+@Suite("HiveRuntimeStreamingModes", .serialized)
 struct HiveRuntimeStreamingModeTests {
 
     // MARK: - Shared Schema

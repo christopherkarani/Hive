@@ -99,6 +99,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
 
     private let capacity: Int
     private let condition = NSCondition()
+    private let pumpQueue: DispatchQueue
 
     private var queue: EventRingQueue
     private var finishState: FinishState?
@@ -106,6 +107,10 @@ internal final class HiveEventStreamController: @unchecked Sendable {
     init(capacity: Int) {
         let normalizedCapacity = max(1, capacity)
         self.capacity = normalizedCapacity
+        self.pumpQueue = DispatchQueue(
+            label: "HiveEventStreamController.pump.\(UUID().uuidString)",
+            qos: .userInitiated
+        )
         self.queue = EventRingQueue(capacity: normalizedCapacity)
     }
 
@@ -119,8 +124,8 @@ internal final class HiveEventStreamController: @unchecked Sendable {
             continuation.onTermination = { [weak self] _ in
                 self?.terminateStreamAndUnblockProducers()
             }
-            Task.detached(priority: .userInitiated) {
-                await self.pump(into: continuation)
+            pumpQueue.async { [weak self] in
+                self?.pump(into: continuation)
             }
         }
     }
@@ -206,7 +211,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         return .enqueued
     }
 
-    func pump(into continuation: AsyncThrowingStream<HiveEvent, Error>.Continuation) async {
+    func pump(into continuation: AsyncThrowingStream<HiveEvent, Error>.Continuation) {
         while true {
             let state = drainState()
             switch state {
@@ -224,7 +229,7 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                         if isDroppable(event.kind) {
                             consumeFirst()
                         } else {
-                            try? await Task.sleep(nanoseconds: 250_000)
+                            Thread.sleep(forTimeInterval: 0.00025)
                         }
                         break
                     case .terminated:

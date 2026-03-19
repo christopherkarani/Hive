@@ -53,6 +53,59 @@ public enum HiveChatMessageOp: String, Codable, Sendable {
     case removeAll
 }
 
+/// Provider-agnostic structured output request format.
+public enum HiveStructuredOutputFormat: Codable, Sendable, Equatable {
+    case jsonObject
+    case jsonSchema(name: String, schemaJSON: String)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case name
+        case schemaJSON
+    }
+
+    private enum Kind: String, Codable {
+        case jsonObject = "json_object"
+        case jsonSchema = "json_schema"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .jsonObject:
+            try container.encode(Kind.jsonObject, forKey: .type)
+        case .jsonSchema(let name, let schemaJSON):
+            try container.encode(Kind.jsonSchema, forKey: .type)
+            try container.encode(name, forKey: .name)
+            try container.encode(schemaJSON, forKey: .schemaJSON)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .type) {
+        case .jsonObject:
+            self = .jsonObject
+        case .jsonSchema:
+            self = .jsonSchema(
+                name: try container.decode(String.self, forKey: .name),
+                schemaJSON: try container.decode(String.self, forKey: .schemaJSON)
+            )
+        }
+    }
+}
+
+/// Structured output payload emitted by a model response.
+public struct HiveStructuredOutput: Codable, Sendable, Equatable {
+    public let format: HiveStructuredOutputFormat
+    public let json: String
+
+    public init(format: HiveStructuredOutputFormat, json: String) {
+        self.format = format
+        self.json = json
+    }
+}
+
 /// Canonical chat message.
 public struct HiveChatMessage: Codable, Sendable {
     public let id: String
@@ -61,6 +114,7 @@ public struct HiveChatMessage: Codable, Sendable {
     public let name: String?
     public let toolCallID: String?
     public let toolCalls: [HiveToolCall]
+    public let structuredOutput: HiveStructuredOutput?
     public let op: HiveChatMessageOp?
 
     public init(
@@ -70,6 +124,7 @@ public struct HiveChatMessage: Codable, Sendable {
         name: String? = nil,
         toolCallID: String? = nil,
         toolCalls: [HiveToolCall] = [],
+        structuredOutput: HiveStructuredOutput? = nil,
         op: HiveChatMessageOp? = nil
     ) {
         self.id = id
@@ -78,7 +133,30 @@ public struct HiveChatMessage: Codable, Sendable {
         self.name = name
         self.toolCallID = toolCallID
         self.toolCalls = toolCalls
+        self.structuredOutput = structuredOutput
         self.op = op
+    }
+
+    /// Backward-compatible initializer for callers compiled before structured outputs were added.
+    public init(
+        id: String,
+        role: HiveChatRole,
+        content: String,
+        name: String? = nil,
+        toolCallID: String? = nil,
+        toolCalls: [HiveToolCall] = [],
+        op: HiveChatMessageOp? = nil
+    ) {
+        self.init(
+            id: id,
+            role: role,
+            content: content,
+            name: name,
+            toolCallID: toolCallID,
+            toolCalls: toolCalls,
+            structuredOutput: nil,
+            op: op
+        )
     }
 }
 
@@ -87,11 +165,32 @@ public struct HiveChatRequest: Codable, Sendable {
     public let model: String
     public let messages: [HiveChatMessage]
     public let tools: [HiveToolDefinition]
+    public let structuredOutput: HiveStructuredOutputFormat?
 
-    public init(model: String, messages: [HiveChatMessage], tools: [HiveToolDefinition]) {
+    public init(
+        model: String,
+        messages: [HiveChatMessage],
+        tools: [HiveToolDefinition],
+        structuredOutput: HiveStructuredOutputFormat? = nil
+    ) {
         self.model = model
         self.messages = messages
         self.tools = tools
+        self.structuredOutput = structuredOutput
+    }
+
+    /// Backward-compatible initializer for callers compiled before structured outputs were added.
+    public init(
+        model: String,
+        messages: [HiveChatMessage],
+        tools: [HiveToolDefinition]
+    ) {
+        self.init(
+            model: model,
+            messages: messages,
+            tools: tools,
+            structuredOutput: nil
+        )
     }
 }
 

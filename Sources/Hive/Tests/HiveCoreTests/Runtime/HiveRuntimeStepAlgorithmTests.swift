@@ -48,6 +48,8 @@ private func collectEventsAndError(_ stream: AsyncThrowingStream<HiveEvent, Erro
     }
 }
 
+@Suite("HiveRuntimeStepAlgorithm", .serialized)
+struct HiveRuntimeStepAlgorithmTests {
 @Test("Router fresh read sees own write only")
 func testRouterFreshRead_SeesOwnWriteNotOthers() async throws {
     enum Schema: HiveSchema {
@@ -264,7 +266,8 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
 
         func decode(_ data: Data) throws -> Int {
             guard data.count == MemoryLayout<Int64>.size else { throw HiveRuntimeError.invalidRunOptions("bad decode") }
-            let raw = data.withUnsafeBytes { $0.load(as: Int64.self) }
+            var raw: Int64 = 0
+            _ = withUnsafeMutableBytes(of: &raw) { data.copyBytes(to: $0) }
             return Int(Int64(bigEndian: raw))
         }
     }
@@ -478,7 +481,15 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
     }
 
     final class Attempts: @unchecked Sendable {
-        var count = 0
+        private let lock = NSLock()
+        private var count = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return count
+        }
     }
     let attempts = Attempts()
 
@@ -487,8 +498,7 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
         HiveNodeID("A"),
         retryPolicy: .exponentialBackoff(initialNanoseconds: 0, factor: 1, maxAttempts: 2, maxNanoseconds: 0)
     ) { input in
-        attempts.count += 1
-        if attempts.count == 1 {
+        if attempts.next() == 1 {
             input.emitStream(.modelToken(text: "attempt1"), [:])
             throw HiveRuntimeError.invalidRunOptions("fail once")
         }
@@ -527,14 +537,22 @@ func testRouterFreshRead_ErrorAbortsStep() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
             final class ThrowOnce: @unchecked Sendable {
-                var hasThrown = false
+                private let lock = NSLock()
+                private var hasThrown = false
+
+                func consumeNextState() -> Bool {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    let current = hasThrown
+                    hasThrown = true
+                    return current
+                }
             }
             let state = ThrowOnce()
             let reducer = HiveReducer<Int> { current, update in
-                if state.hasThrown {
+                if state.consumeNextState() {
                     throw HiveRuntimeError.invalidRunOptions("router view error")
                 }
-                state.hasThrown = true
                 return current + update
             }
             let key = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
@@ -950,4 +968,5 @@ func testUnknownChannelWrite_FailsNoCommit() async throws {
     } else {
         #expect(Bool(false))
     }
+}
 }

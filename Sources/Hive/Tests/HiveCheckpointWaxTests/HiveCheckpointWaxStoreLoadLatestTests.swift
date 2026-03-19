@@ -34,6 +34,8 @@ private func makeCheckpoint(
     )
 }
 
+@Suite("HiveCheckpointWaxStoreLoadLatest", .serialized)
+struct HiveCheckpointWaxStoreLoadLatestTests {
 @Test("HiveCheckpointWaxStore.loadLatest breaks ties by newest frame")
 func hiveCheckpointWaxStoreLoadLatestPrefersNewestFrameOnStepTie() async throws {
     let url = try makeTempWaxURL()
@@ -179,4 +181,5 @@ func hiveCheckpointWaxStoreQueriesSkipDeletedFrames() async throws {
 
     let deletedLookup = try await store.loadCheckpoint(threadID: threadID, id: newer.id)
     #expect(deletedLookup == nil)
+}
 }

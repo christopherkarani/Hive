@@ -54,7 +54,8 @@ public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Send
                             let response = Self.makeResponse(
                                 messageID: messageID,
                                 text: accumulatedText,
-                                toolCalls: toolCalls
+                                toolCalls: toolCalls,
+                                request: request
                             )
                             continuation.yield(.final(response))
                             continuation.finish()
@@ -149,11 +150,17 @@ public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Send
         from request: HiveChatRequest,
         base: GenerateConfig
     ) throws -> GenerateConfig {
+        var config = base
+
+        if let structuredOutput = request.structuredOutput {
+            config = config.responseFormat(try responseFormat(from: structuredOutput))
+        }
+
         guard !request.tools.isEmpty else {
-            return base
+            return config
         }
         let toolDefinitions = try request.tools.map(makeToolDefinition(from:))
-        return base.tools(toolDefinitions)
+        return config.tools(toolDefinitions)
     }
 
     private static func makeToolDefinition(from tool: HiveToolDefinition) throws -> Transcript.ToolDefinition {
@@ -181,7 +188,8 @@ public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Send
     private static func makeResponse(
         messageID: @Sendable () -> String,
         text: String,
-        toolCalls: [Transcript.ToolCall]
+        toolCalls: [Transcript.ToolCall],
+        request: HiveChatRequest
     ) -> HiveChatResponse {
         let hiveToolCalls = toolCalls.map { call in
             HiveToolCall(
@@ -190,13 +198,39 @@ public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Send
                 argumentsJSON: call.arguments.jsonString
             )
         }
+        let structuredOutput: HiveStructuredOutput? = if hiveToolCalls.isEmpty,
+                                                        let format = request.structuredOutput
+        {
+            HiveStructuredOutput(format: format, json: text)
+        } else {
+            nil
+        }
         let message = HiveChatMessage(
             id: messageID(),
             role: .assistant,
             content: text,
-            toolCalls: hiveToolCalls
+            toolCalls: hiveToolCalls,
+            structuredOutput: structuredOutput
         )
         return HiveChatResponse(message: message)
+    }
+
+    private static func responseFormat(from format: HiveStructuredOutputFormat) throws -> ResponseFormat {
+        switch format {
+        case .jsonObject:
+            return .jsonObject
+        case .jsonSchema(let name, let schemaJSON):
+            guard let data = schemaJSON.data(using: .utf8) else {
+                throw ConduitModelClientError.invalidStructuredOutputSchema("Schema is not valid UTF-8")
+            }
+            do {
+                return .jsonSchema(name: name, schema: try JSONDecoder().decode(GenerationSchema.self, from: data))
+            } catch {
+                throw ConduitModelClientError.invalidStructuredOutputSchema(
+                    "Failed to decode structured output schema: \(error)"
+                )
+            }
+        }
     }
 }
 
@@ -205,4 +239,5 @@ public enum ConduitModelClientError: Error, Sendable {
     case invalidToolArgumentsJSON(String)
     case missingToolCallID(String)
     case unknownToolName(String)
+    case invalidStructuredOutputSchema(String)
 }

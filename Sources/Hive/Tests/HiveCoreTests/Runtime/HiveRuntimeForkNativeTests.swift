@@ -251,6 +251,8 @@ private func seedCheckpointForSource(
     return checkpoint.id
 }
 
+@Suite("HiveRuntimeForkNative", .serialized)
+struct HiveRuntimeForkNativeTests {
 @Test("fork from latest checkpoint clones thread state")
 func testFork_FromLatestCheckpoint() async throws {
     let store = ForkQueryableStore<ForkBaseSchema>()
@@ -799,4 +801,5 @@ func testFork_DeterminismRepeatedRuns() async throws {
 
     #expect(Set(transcriptHashes).count == 1)
     #expect(Set(finalStateHashes).count == 1)
+}
 }

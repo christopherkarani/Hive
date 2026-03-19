@@ -69,6 +69,7 @@ func hiveChatMessageOpCodableRoundTrip() throws {
 @Test("HiveChatMessage Codable round-trip preserves all fields")
 func hiveChatMessageCodableRoundTrip() throws {
     let toolCall = HiveToolCall(id: "call-42", name: "math", argumentsJSON: "{\"x\":2}")
+    let structuredOutput = HiveStructuredOutput(format: .jsonObject, json: #"{"answer":"result"}"#)
     let message = HiveChatMessage(
         id: "msg-1",
         role: .assistant,
@@ -76,6 +77,7 @@ func hiveChatMessageCodableRoundTrip() throws {
         name: "assistant",
         toolCallID: "call-42",
         toolCalls: [toolCall],
+        structuredOutput: structuredOutput,
         op: .remove
     )
 
@@ -86,6 +88,7 @@ func hiveChatMessageCodableRoundTrip() throws {
     #expect(decoded.name == message.name)
     #expect(decoded.toolCallID == message.toolCallID)
     #expect(decoded.op == message.op)
+    #expect(decoded.structuredOutput == structuredOutput)
     #expect(decoded.toolCalls.count == 1)
     if let decodedCall = decoded.toolCalls.first {
         expectToolCallMatches(decodedCall, toolCall)
@@ -102,27 +105,68 @@ func hiveChatMessageCodableRoundTripDefaults() throws {
     #expect(decoded.name == nil)
     #expect(decoded.toolCallID == nil)
     #expect(decoded.op == nil)
+    #expect(decoded.structuredOutput == nil)
     #expect(decoded.toolCalls.isEmpty)
 }
 
 @Test("HiveChatRequest/Response Codable round-trip preserves fields")
 func hiveChatRequestResponseCodableRoundTrip() throws {
     let tool = HiveToolDefinition(name: "echo", description: "Echo input", parametersJSONSchema: "{\"type\":\"object\"}")
-    let message = HiveChatMessage(id: "msg-2", role: .user, content: "hello")
-    let request = HiveChatRequest(model: "test-model", messages: [message], tools: [tool])
+    let message = HiveChatMessage(
+        id: "msg-2",
+        role: .assistant,
+        content: "hello",
+        structuredOutput: HiveStructuredOutput(format: .jsonObject, json: #"{"hello":"world"}"#)
+    )
+    let request = HiveChatRequest(
+        model: "test-model",
+        messages: [message],
+        tools: [tool],
+        structuredOutput: .jsonSchema(
+            name: "HelloSchema",
+            schemaJSON: #"{"type":"object","properties":{"hello":{"type":"string"}},"required":["hello"]}"#
+        )
+    )
 
     let decodedRequest = try roundTrip(request)
     #expect(decodedRequest.model == request.model)
     #expect(decodedRequest.messages.count == 1)
     #expect(decodedRequest.tools.count == 1)
     #expect(decodedRequest.messages.first?.id == message.id)
+    #expect(decodedRequest.messages.first?.structuredOutput == message.structuredOutput)
     #expect(decodedRequest.tools.first?.name == tool.name)
+    #expect(decodedRequest.structuredOutput == request.structuredOutput)
 
     let response = HiveChatResponse(message: message)
     let decodedResponse = try roundTrip(response)
     #expect(decodedResponse.message.id == response.message.id)
     #expect(decodedResponse.message.role == response.message.role)
     #expect(decodedResponse.message.content == response.message.content)
+    #expect(decodedResponse.message.structuredOutput == response.message.structuredOutput)
+}
+
+@Test("HiveStructuredOutputFormat Codable round-trip preserves schema payloads")
+func hiveStructuredOutputFormatCodableRoundTrip() throws {
+    let jsonObject = try roundTrip(HiveStructuredOutputFormat.jsonObject)
+    #expect(jsonObject == .jsonObject)
+
+    let schema = HiveStructuredOutputFormat.jsonSchema(
+        name: "AnswerSchema",
+        schemaJSON: #"{"type":"object","properties":{"answer":{"type":"string"}}}"#
+    )
+    let decodedSchema = try roundTrip(schema)
+    #expect(decodedSchema == schema)
+}
+
+@Test("HiveStructuredOutput Codable round-trip preserves JSON payload")
+func hiveStructuredOutputCodableRoundTrip() throws {
+    let output = HiveStructuredOutput(
+        format: .jsonObject,
+        json: #"{"answer":"ok"}"#
+    )
+
+    let decoded = try roundTrip(output)
+    #expect(decoded == output)
 }
 
 @Test("HiveLatencyTier and HiveNetworkState raw values are stable")

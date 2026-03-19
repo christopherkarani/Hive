@@ -89,6 +89,8 @@ private func drainEvents(_ stream: AsyncThrowingStream<HiveEvent, Error>) async 
 
 // MARK: - README Example 1: Hello World
 
+@Suite("ReadmeExamples", .serialized)
+struct ReadmeExampleTests {
 @Test("README Example: Hello World — minimal node sets a channel")
 func readmeHelloWorldExample() async throws {
     enum Schema: HiveSchema {
@@ -398,4 +400,5 @@ func readmeFanOutJoinInterruptExample() async throws {
     }
     #expect(try finalStore.get(statusKey) == "completed")
     #expect(try finalStore.get(resultsKey).sorted() == ["A", "B", "C"])
+}
 }

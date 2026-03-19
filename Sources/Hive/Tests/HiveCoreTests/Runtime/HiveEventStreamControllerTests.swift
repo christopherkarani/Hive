@@ -62,6 +62,8 @@ private func waitForSignal(
     return await signal.value()
 }
 
+@Suite("HiveEventStreamController", .serialized)
+struct HiveEventStreamControllerTests {
 @Test("Non-droppable events are not consumed when continuation reports dropped")
 func nonDroppableEventsAreRetriedUnderBackpressure() async throws {
     let controller = HiveEventStreamController(capacity: 1)
@@ -174,6 +176,8 @@ func nonDroppableProducerUnblocksWhenConsumerTerminates() async throws {
         controller.finish()
     }
     await producer.value
+    controller.finish()
 
     #expect(completedBeforeForceFinish)
+}
 }

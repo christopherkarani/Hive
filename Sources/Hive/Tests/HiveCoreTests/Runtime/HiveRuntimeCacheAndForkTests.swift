@@ -45,6 +45,8 @@ private func drain(_ stream: AsyncThrowingStream<HiveEvent, Error>) async -> [Hi
 
 /// Tests end-to-end caching behavior: first execution stores result, subsequent calls with
 /// identical store state return cached output without re-executing the node.
+@Suite("HiveRuntimeCacheAndFork", .serialized)
+struct HiveRuntimeCacheAndForkTests {
 @Test("Cache hit returns stored output and skips node execution")
 func testCache_HitSkipsNodeExecution() async throws {
     enum Schema: HiveSchema {
@@ -91,6 +93,7 @@ func testCache_HitSkipsNodeExecution() async throws {
     _ = await drain(h2.events)
     let afterSecond = executionCount.withLock { $0 }
     #expect(afterSecond == 1, "Node must NOT execute on second run with identical store state (cache hit)")
+}
 }
 
 /// Verifies that after a cache hit, the mutated LRU order is written back to `state.nodeCaches`,
