@@ -9,6 +9,7 @@
   <img src="https://img.shields.io/badge/macOS-26%2B-007AFF?style=flat&logo=apple&logoColor=white" alt="macOS 26+">
   <img src="https://img.shields.io/badge/License-MIT-22c55e?style=flat" alt="MIT License">
   <a href="https://christopherkarani.github.io/Hive/"><img src="https://img.shields.io/badge/Docs-Website-58a6ff?style=flat" alt="Documentation"></a>
+  <a href="https://discord.gg/NHgNh7HJ6M"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FNHgNh7HJ6M%3Fwith_counts%3Dtrue&query=%24.approximate_presence_count&suffix=%20online&logo=discord&label=Discord&color=5865F2&style=flat" alt="Discord"></a>
 </p>
 
 ---
