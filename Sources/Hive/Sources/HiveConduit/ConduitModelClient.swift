@@ -1,6 +1,6 @@
 import Foundation
 import HiveCore
-import Conduit
+import ConduitAdvanced
 
 /// Conduit-backed implementation of `HiveModelClient`.
 public struct ConduitModelClient<Provider: TextGenerator>: HiveModelClient, Sendable {

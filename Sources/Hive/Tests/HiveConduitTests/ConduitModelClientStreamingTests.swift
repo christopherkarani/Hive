@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import HiveConduit
-import Conduit
+import ConduitAdvanced
 
 private struct StubModelID: ModelIdentifying {
     let rawValue: String

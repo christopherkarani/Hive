@@ -9,9 +9,9 @@
 
 ---
 
-LLM workflows break in subtle ways — state mutated mid-step, non-deterministic fan-out, no way to pause for human review without losing context. Hive fixes this with a formal execution model borrowed from parallel computing.
+LLM workflows break in subtle ways: state mutates mid-step, fan-out becomes nondeterministic, or human review loses context. Hive fixes that with a formal execution model borrowed from parallel computing.
 
-**Every node in a step runs concurrently. Writes are held until all nodes finish. Commit is atomic.** The next step sees a clean, consistent snapshot. Run the same graph twice with the same inputs — you get byte-identical output.
+**Every node in a step runs concurrently. Writes are held until all nodes finish. Commit is atomic.** The next step sees a clean, consistent snapshot. Run the same graph twice with the same inputs and you get byte-identical output.
 
 ---
 
@@ -92,10 +92,10 @@ Step N+1         ┌─────────┴──────────
                Node D              Node E         ← see post-commit state
 ```
 
-- **Channels** — typed state slots with a scope (global or task-local), reducer, and optional codec for checkpointing.
-- **Reducers** — `lastWriteWins`, `append`, `setUnion`, `dictionaryMerge` — fold concurrent writes deterministically.
-- **Fan-out / Join** — `SpawnEach` creates N parallel tasks with task-local state; `Join` fires when all parents complete.
-- **Interrupt / Resume** — any node returns `Interrupt(payload)`. Runtime checkpoints state and returns `.interrupted`. Resume reloads from checkpoint; payload is delivered exactly once to the next step.
+- **Channels:** typed state slots with a scope (global or task-local), reducer, and optional codec for checkpointing.
+- **Reducers:** `lastWriteWins`, `append`, `setUnion`, and `dictionaryMerge` fold concurrent writes deterministically.
+- **Fan-out / Join:** `SpawnEach` creates N parallel tasks with task-local state, and `Join` fires when all parents complete.
+- **Interrupt / Resume:** any node can return `Interrupt(payload)`. The runtime checkpoints state and returns `.interrupted`; resume reloads from that checkpoint and delivers the payload exactly once.
 
 ---
 
@@ -106,7 +106,7 @@ git clone https://github.com/christopherkarani/hive
 swift run HiveTinyGraphExample
 ```
 
-The example runs a fan-out across 3 parallel workers, waits at a join barrier, fires an interrupt, saves a checkpoint, and resumes — all in ~100 lines with no model client required.
+The example runs a fan-out across 3 parallel workers, waits at a join barrier, fires an interrupt, saves a checkpoint, and resumes, all in about 100 lines with no model client required.
 
 ---
 
@@ -145,12 +145,12 @@ Requires Swift 6.2 · iOS 26+ · macOS 26+
 
 | Module | What it provides |
 |--------|-----------------|
-| `HiveCore` | Schema, graph builder, runtime, all core types — zero external deps |
+| `HiveCore` | Schema, graph builder, runtime, and all core types with zero external dependencies |
 | `HiveDSL` | `Workflow` / `Node` / `Branch` / `ModelTurn` / `Subgraph` / `WorkflowPatch` |
 | `HiveConduit` | Adapter for any [Conduit](https://github.com/PreternaturalAI/Conduit) `TextGenerator` (OpenAI, Anthropic, …) |
 | `HiveCheckpointWax` | Durable WAL-backed checkpoint store via [Wax](https://github.com/PreternaturalAI/Wax) |
 | `HiveRAGWax` | Namespace-scoped memory with recall |
-| `Hive` | Umbrella re-export of all of the above — one import |
+| `Hive` | Umbrella re-export of the modules above in a single import |
 
 ---
 
@@ -205,7 +205,7 @@ print(patched.diff.renderMermaid())   // Mermaid diagram with diff annotations
 | Area | State |
 |------|-------|
 | Core runtime, superstep loop, BSP semantics | Stable |
-| HiveDSL — Workflow / Node / Branch / Effects | Stable |
+| HiveDSL (`Workflow`, `Node`, `Branch`, `Effects`) | Stable |
 | ModelTurn + HiveModelToolLoop | Stable |
 | Interrupt / resume | Stable |
 | Checkpoint (in-memory + Wax WAL) | Stable |
@@ -229,4 +229,4 @@ swift run HiveTinyGraphExample
 
 ## License
 
-MIT — see [LICENSE](../../LICENSE)
+MIT. See [LICENSE](../../LICENSE).
