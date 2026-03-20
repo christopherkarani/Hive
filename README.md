@@ -13,7 +13,7 @@
 
 ---
 
-LLM agent workflows break in subtle ways — state mutated mid-step, non-deterministic tool call ordering, lost context on resume. Hive eliminates these failure modes with a **deterministic superstep execution model** borrowed from [Bulk Synchronous Parallel](https://en.wikipedia.org/wiki/Bulk_synchronous_parallel) (the same model behind Google Pregel and Apache Spark GraphX).
+LLM agent workflows break in subtle ways: state mutates mid-step, tool calls run in a different order, resume loses context. Hive handles those failure modes with a **deterministic superstep execution model** borrowed from [Bulk Synchronous Parallel](https://en.wikipedia.org/wiki/Bulk_synchronous_parallel).
 
 Run the same graph twice with the same inputs. Get identical output, identical event traces, identical checkpoint bytes. Write golden tests against agent behavior the same way you test a pure function.
 
@@ -45,7 +45,7 @@ git clone https://github.com/christopherkarani/Hive.git
 cd Hive && swift run HiveTinyGraphExample
 ```
 
-No API keys required. The example runs fan-out workers, a join barrier, and an interrupt/resume cycle — all in-process.
+No API keys required. The example runs fan-out workers, a join barrier, and an interrupt/resume cycle in-process.
 
 ## Run Tests
 
@@ -79,7 +79,7 @@ Schema → Graph → Runtime → Output
 
   1. Define typed channels          (HiveSchema)
   2. Build a graph via DSL          (Workflow { Node(...) Edge(...) Branch(...) })
-  3. Compile to validated graph     (.compile() — cycle detection, SHA-256 versioning)
+  3. Compile to a validated graph   (`.compile()` with cycle detection and SHA-256 versioning)
   4. Execute supersteps:
      ┌─ Frontier nodes run concurrently (lexicographic order)
      ├─ Writes collected, reduced, committed atomically
@@ -92,17 +92,13 @@ Every superstep is atomic. No node sees another node's writes from the same step
 
 ## What You Can Build
 
-**Agent graphs** — Multi-step LLM workflows with tool calling, bounded ReAct loops, and streaming tokens via `AsyncThrowingStream`.
+- Agent graphs with tool calling, bounded ReAct loops, and token streaming via `AsyncThrowingStream`.
+- Human-in-the-loop workflows that interrupt for approval, checkpoint state, and resume with typed payloads.
+- Fan-out pipelines where `SpawnEach` dispatches parallel workers and `Join` barriers bring them back together deterministically.
+- Hybrid inference paths that route between on-device models and cloud providers without changing execution semantics.
+- RAG workflows with `HiveRAGWax`, BM25 ranking, and pluggable memory stores.
 
-**Human-in-the-loop** — Interrupt for approval, checkpoint full runtime state, resume with typed payloads. No lost context.
-
-**Fan-out pipelines** — `SpawnEach` dispatches parallel workers with task-local state. `Join` barriers synchronize them. Deterministic merge on completion.
-
-**Hybrid inference** — Route between on-device models and cloud providers. Same deterministic execution regardless of which model responds.
-
-**RAG** — On-device vector recall via `HiveRAGWax` with BM25 ranking. Pluggable memory stores.
-
-## Agent Loop — 5 Lines
+## Agent Loop in 5 Lines
 
 ```swift
 Workflow<Schema> {
@@ -166,13 +162,13 @@ Generates typed channel keys, `channelSpecs`, codecs, and scope configuration.
 ## Architecture
 
 ```
-HiveCore  (zero external dependencies — pure Swift)
+HiveCore  (zero external dependencies, pure Swift)
 ├── HiveDSL             Result-builder workflow DSL
 ├── HiveConduit          Conduit model client adapter
 ├── HiveCheckpointWax    Wax-backed checkpoint store
 └── HiveRAGWax           Wax-backed RAG snippets
 
-Hive  (umbrella — re-exports Core + DSL + adapters)
+Hive  (umbrella product that re-exports Core, DSL, and adapters)
 HiveMacros              @HiveSchema / @Channel / @WorkflowBlueprint
 ```
 
@@ -206,9 +202,9 @@ dependencies: [
 
 ## Documentation
 
-Full docs at **[christopherkarani.github.io/Hive](https://christopherkarani.github.io/Hive/)** — covers every module, the complete DSL grammar, testing patterns, and worked examples.
+Full docs live at **[christopherkarani.github.io/Hive](https://christopherkarani.github.io/Hive/)**. They cover every module, the DSL grammar, testing patterns, and worked examples.
 
-The runtime behavior is defined by a normative specification: [`HIVE_SPEC.md`](HIVE_SPEC.md). Implementation follows the spec — not the other way around.
+The runtime behavior is defined by [`HIVE_SPEC.md`](HIVE_SPEC.md). The implementation follows that spec.
 
 ## Contributing
 

@@ -1,6 +1,26 @@
 // swift-tools-version: 6.2
 
+import Foundation
 import PackageDescription
+
+let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+let useLocalDeps = ProcessInfo.processInfo.environment["AISTACK_USE_LOCAL_DEPS"] == "1"
+
+var packageDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
+]
+
+if useLocalDeps {
+    packageDependencies += [
+        .package(path: packageRoot.appendingPathComponent("../Conduit").path),
+        .package(path: packageRoot.appendingPathComponent("../Wax").path),
+    ]
+} else {
+    packageDependencies += [
+        .package(url: "https://github.com/christopherkarani/Conduit", exact: "0.3.10"),
+        .package(url: "https://github.com/christopherkarani/Wax.git", exact: "0.1.19"),
+    ]
+}
 
 let package = Package(
     name: "Hive",
@@ -17,11 +37,7 @@ let package = Package(
         .library(name: "HiveRAGWax", targets: ["HiveRAGWax"]),
         .executable(name: "HiveTinyGraphExample", targets: ["HiveTinyGraphExample"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.1"),
-        .package(url: "https://github.com/christopherkarani/Wax.git", from: "0.1.3"),
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
-    ],
+    dependencies: packageDependencies,
     targets: [
         .target(
             name: "HiveCore",
@@ -37,7 +53,7 @@ let package = Package(
             name: "HiveConduit",
             dependencies: [
                 "HiveCore",
-                .product(name: "Conduit", package: "Conduit"),
+                .product(name: "ConduitAdvanced", package: "Conduit"),
             ],
             path: "Sources/Hive/Sources/HiveConduit",
             exclude: ["README.md"]
@@ -97,6 +113,7 @@ let package = Package(
             dependencies: [
                 "HiveConduit",
                 "HiveDSL",
+                .product(name: "ConduitAdvanced", package: "Conduit"),
             ],
             path: "Sources/Hive/Tests/HiveConduitTests"
         ),

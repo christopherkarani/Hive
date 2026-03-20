@@ -1,7 +1,7 @@
 import Testing
 import HiveConduit
 import HiveDSL
-import Conduit
+import ConduitAdvanced
 
 private struct NoopClock: HiveClock {
     func nowNanoseconds() -> UInt64 { 0 }

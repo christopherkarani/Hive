@@ -88,6 +88,8 @@ private func makeLookupTool() -> HiveToolDefinition {
     )
 }
 
+@Suite("ModelTurnLoop", .serialized)
+struct ModelTurnLoopTests {
 @Test("ModelTurn default mode remains single-shot complete")
 func modelTurnDefaultModeIsSingleShotComplete() async throws {
     enum Schema: HiveSchema {
@@ -372,4 +374,5 @@ func modelTurnAgentLoopThrowsWhenToolRegistryMissing() async throws {
     } catch {
         #expect(Bool(false))
     }
+}
 }

@@ -142,6 +142,8 @@ private enum TestError: Error {
     case loadFailed
 }
 
+@Suite("HiveRuntimeCheckpoint", .serialized)
+struct HiveRuntimeCheckpointTests {
 @Test("Checkpoint persists frontier order + provenance")
 func testCheckpoint_PersistsFrontierOrderAndProvenance() async throws {
     enum Schema: HiveSchema {
@@ -600,6 +602,7 @@ func testCheckpointDecodeFailure_FailsBeforeStep0() async throws {
         if case .checkpointLoaded = event.kind { return true }
         return false
     })
+}
 }
 
 @Test("Checkpoint corrupt join barrier keys mismatch fails before step 0")

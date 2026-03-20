@@ -268,6 +268,10 @@ actor HiveEventStreamViewsHub {
         self.source = source
     }
 
+    deinit {
+        pumpTask?.cancel()
+    }
+
     func addSubscriber(
         id: UUID,
         onEvent: @escaping (HiveEvent) -> Void,
@@ -288,16 +292,26 @@ actor HiveEventStreamViewsHub {
 
     private func startPumpIfNeeded() {
         guard pumpTask == nil else { return }
-        pumpTask = Task.detached { [source] in
+        pumpTask = Task(priority: .userInitiated) { [weak self, source] in
             do {
                 for try await event in source {
+                    guard let self else { return }
                     await self.broadcast(event)
                 }
+                guard let self else { return }
                 await self.finishAll(.success(()))
+            } catch is CancellationError {
+                guard let self else { return }
+                await self.clearPumpTask()
             } catch {
+                guard let self else { return }
                 await self.finishAll(.failure(error))
             }
         }
+    }
+
+    private func clearPumpTask() {
+        pumpTask = nil
     }
 
     private func broadcast(_ event: HiveEvent) {

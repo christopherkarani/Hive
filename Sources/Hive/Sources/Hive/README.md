@@ -1,6 +1,6 @@
 # Hive
 
-Umbrella module that re-exports HiveCore, HiveDSL, HiveConduit, and HiveCheckpointWax.
+Umbrella module that re-exports `HiveCore`, `HiveDSL`, `HiveConduit`, and `HiveCheckpointWax`.
 
 Use `import Hive` when you want the core runtime plus the DSL and Conduit/Wax adapters in one import.
 

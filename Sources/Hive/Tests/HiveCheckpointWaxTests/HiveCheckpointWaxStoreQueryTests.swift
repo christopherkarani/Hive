@@ -14,6 +14,8 @@ private func makeTempWaxURL() throws -> URL {
     return directory.appendingPathComponent("wax.wax")
 }
 
+@Suite("HiveCheckpointWaxStoreQuery", .serialized)
+struct HiveCheckpointWaxStoreQueryTests {
 @Test("HiveCheckpointWaxStore.listCheckpoints orders by stepIndex desc then newest frame")
 func hiveCheckpointWaxStoreListCheckpointsOrdering() async throws {
     let url = try makeTempWaxURL()
@@ -99,4 +101,5 @@ func hiveCheckpointWaxStoreLoadCheckpointByID() async throws {
 
     let missing = try await store.loadCheckpoint(threadID: threadID, id: HiveCheckpointID("missing"))
     #expect(missing == nil)
+}
 }

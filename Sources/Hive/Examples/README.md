@@ -1,9 +1,11 @@
-**Hive Examples**
-These runnable SwiftPM examples target Apple platforms (macOS/iOS) and focus on core Hive semantics.
+# Hive Examples
 
-**Tiny Graph (Send + Interrupt/Resume)**
-This example demonstrates:
-- A tiny graph with fan-out via `spawn` (Send)
+These runnable SwiftPM examples target Apple platforms and focus on the core Hive execution model.
+
+## Tiny Graph (Send + Interrupt/Resume)
+
+This example shows:
+- A small graph with fan-out via `spawn`
 - Task-local payloads passed to workers
 - Interrupt and resume with checkpointing
 
