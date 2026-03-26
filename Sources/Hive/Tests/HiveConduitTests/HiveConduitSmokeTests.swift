@@ -3,7 +3,7 @@ import HiveConduit
 
 @Test("HiveConduit module loads")
 func hiveConduitModuleLoads() {
-    #expect(HiveConduitVersion.string == "0.0.0")
+    #expect(HiveVersion.conduit == "0.0.0")
 }
 
 @Test("HiveConduit exposes HiveCore symbols")

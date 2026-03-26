@@ -17,8 +17,8 @@ if useLocalDeps {
     ]
 } else {
     packageDependencies += [
-        .package(url: "https://github.com/christopherkarani/Conduit", exact: "0.3.10"),
-        .package(url: "https://github.com/christopherkarani/Wax.git", exact: "0.1.19"),
+        .package(url: "https://github.com/christopherkarani/Conduit", from: "0.3.10"),
+        .package(url: "https://github.com/christopherkarani/Wax.git", from: "0.1.19"),
     ]
 }
 

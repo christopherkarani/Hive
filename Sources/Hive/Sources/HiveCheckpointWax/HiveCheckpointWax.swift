@@ -1,7 +1,11 @@
 @_exported import HiveCore
 
-/// Namespace for the HiveCheckpointWax module version.
+// MARK: - Deprecated Version Type
+
+/// Deprecated: Use `HiveVersion.checkpointWax` instead.
+@available(*, deprecated, renamed: "HiveVersion")
 public enum HiveCheckpointWaxVersion {
-    /// Semantic version string for HiveCheckpointWax.
-    public static let string = "0.0.0"
+    /// Deprecated: Use `HiveVersion.checkpointWax` instead.
+    @available(*, deprecated, renamed: "HiveVersion.checkpointWax")
+    public static let string = HiveVersion.checkpointWax
 }

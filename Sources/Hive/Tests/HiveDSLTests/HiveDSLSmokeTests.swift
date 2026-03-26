@@ -5,7 +5,7 @@ import HiveDSL
 struct HiveDSLSmokeTests {
     @Test("HiveDSL module loads")
     func hiveDSLModuleLoads() {
-        #expect(HiveDSLVersion.string == "0.0.0")
+        #expect(HiveVersion.dsl == "0.0.0")
     }
 
     @Test("HiveDSL exposes HiveCore symbols")

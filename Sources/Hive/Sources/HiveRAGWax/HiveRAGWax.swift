@@ -1,7 +1,11 @@
 @_exported import HiveCore
 
-/// Namespace for the HiveRAGWax module version.
+// MARK: - Deprecated Version Type
+
+/// Deprecated: Use `HiveVersion.ragWax` instead.
+@available(*, deprecated, renamed: "HiveVersion")
 public enum HiveRAGWaxVersion {
-    /// Semantic version string for HiveRAGWax.
-    public static let string = "0.0.0"
+    /// Deprecated: Use `HiveVersion.ragWax` instead.
+    @available(*, deprecated, renamed: "HiveVersion.ragWax")
+    public static let string = HiveVersion.ragWax
 }

@@ -8,9 +8,9 @@ func hiveUmbrellaModuleLoads() {
 
 @Test("Hive umbrella re-exports submodules")
 func hiveUmbrellaReexportsSubmodules() {
-    _ = HiveCoreVersion.self
-    _ = HiveConduitVersion.self
-    _ = HiveCheckpointWaxVersion.self
+    _ = HiveVersion.core
+    _ = HiveVersion.conduit
+    _ = HiveVersion.checkpointWax
     enum EmptySchema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Self>] { [] }
     }

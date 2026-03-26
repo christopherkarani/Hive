@@ -1,7 +1,11 @@
 @_exported import HiveCore
 
-/// Namespace for the HiveConduit module version.
+// MARK: - Deprecated Version Type
+
+/// Deprecated: Use `HiveVersion.conduit` instead.
+@available(*, deprecated, renamed: "HiveVersion")
 public enum HiveConduitVersion {
-    /// Semantic version string for HiveConduit.
-    public static let string = "0.0.0"
+    /// Deprecated: Use `HiveVersion.conduit` instead.
+    @available(*, deprecated, renamed: "HiveVersion.conduit")
+    public static let string = HiveVersion.conduit
 }

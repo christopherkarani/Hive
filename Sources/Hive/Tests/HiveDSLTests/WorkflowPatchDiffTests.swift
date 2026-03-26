@@ -5,7 +5,7 @@ private enum PatchSchema: HiveSchema {
     static var channelSpecs: [AnyHiveChannelSpec<Self>] { [] }
 }
 
-private func noopNode() -> HiveNode<PatchSchema> {
+private func noopNode() -> NodeAction<PatchSchema> {
     { _ in HiveNodeOutput() }
 }
 

@@ -3,13 +3,13 @@ import Foundation
 public struct Effect<Schema: HiveSchema>: Sendable {
     public var writes: [AnyHiveWrite<Schema>]
     public var spawn: [HiveTaskSeed<Schema>]
-    public var next: HiveNext?
+    public var next: Route?
     public var interrupt: HiveInterruptRequest<Schema>?
 
     public init(
         writes: [AnyHiveWrite<Schema>] = [],
         spawn: [HiveTaskSeed<Schema>] = [],
-        next: HiveNext? = nil,
+        next: Route? = nil,
         interrupt: HiveInterruptRequest<Schema>? = nil
     ) {
         self.writes = writes
@@ -41,10 +41,10 @@ public struct Effect<Schema: HiveSchema>: Sendable {
     }
 }
 
-extension HiveNext {
-    var _hiveDSLNormalized: HiveNext {
+extension Route {
+    var _hiveDSLNormalized: Route {
         switch self {
-        case .nodes(let nodes) where nodes.isEmpty:
+        case .to(let nodes) where nodes.isEmpty:
             return .end
         default:
             return self
@@ -106,11 +106,11 @@ public func Append<Schema: HiveSchema, Value: RangeReplaceableCollection & Senda
 }
 
 public func GoTo<Schema: HiveSchema>(_ node: String) -> Effect<Schema> {
-    Effect(next: .nodes([HiveNodeID(node)]))
+    Effect(next: .to([HiveNodeID(node)]))
 }
 
 public func GoTo<Schema: HiveSchema>(_ nodes: String...) -> Effect<Schema> {
-    Effect(next: .nodes(nodes.map(HiveNodeID.init)))
+    Effect(next: .to(nodes.map(HiveNodeID.init)))
 }
 
 public func UseGraphEdges<Schema: HiveSchema>() -> Effect<Schema> {

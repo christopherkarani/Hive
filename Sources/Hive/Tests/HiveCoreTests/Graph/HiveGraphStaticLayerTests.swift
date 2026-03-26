@@ -70,7 +70,7 @@ struct HiveGraphStaticLayerTests {
         var builder = HiveGraphBuilder<StaticLayerTestSchema>(start: [a])
         builder.addNode(a) { _ in HiveNodeOutput(writes: [], next: .end) }
         builder.addRouter(from: a) { _ in
-            .nodes([a])
+            .to([a])
         }
 
         let compiled = try builder.compile()

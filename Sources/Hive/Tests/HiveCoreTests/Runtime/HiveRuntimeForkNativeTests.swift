@@ -217,7 +217,7 @@ private func makeInterruptGraph() throws -> CompiledHiveGraph<ForkBaseSchema> {
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(ForkBaseSchema.Channels.notes, ["A-interrupt"])],
-            next: .nodes([HiveNodeID("B")]),
+            next: .to([HiveNodeID("B")]),
             interrupt: HiveInterruptRequest(payload: "approve")
         )
     }
