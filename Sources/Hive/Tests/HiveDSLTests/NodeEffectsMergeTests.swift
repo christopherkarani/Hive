@@ -35,7 +35,7 @@ struct NodeEffectsMergeTests {
             GoTo("Y")
         }
 
-        #expect(output.next == .nodes([HiveNodeID("Y")]))
+        #expect(output.next == .to([HiveNodeID("Y")]))
     }
 
     @Test("Effects last-write-wins interrupt")

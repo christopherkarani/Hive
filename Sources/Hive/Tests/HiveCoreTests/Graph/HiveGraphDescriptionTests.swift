@@ -50,7 +50,7 @@ private func compileTinyGraph() throws -> CompiledHiveGraph<TinyGraphSchema> {
     builder.addJoinEdge(parents: [c, b], target: j)
 
     builder.addRouter(from: a) { _ in
-        .nodes([b, c])
+        .to([b, c])
     }
 
     builder.setOutputProjection(.channels([HiveChannelID("y"), HiveChannelID("x"), HiveChannelID("x")]))

@@ -1,8 +1,12 @@
 @_exported import HiveCore
 
-/// Namespace for the HiveDSL module version.
+// MARK: - Deprecated Version Type
+
+/// Deprecated: Use `HiveVersion.dsl` instead.
+@available(*, deprecated, renamed: "HiveVersion")
 public enum HiveDSLVersion {
-    /// Semantic version string for HiveDSL.
-    public static let string = "0.0.0"
+    /// Deprecated: Use `HiveVersion.dsl` instead.
+    @available(*, deprecated, renamed: "HiveVersion.dsl")
+    public static let string = HiveVersion.dsl
 }
 

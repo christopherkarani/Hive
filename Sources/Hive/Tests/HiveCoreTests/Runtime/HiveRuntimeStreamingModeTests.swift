@@ -96,7 +96,7 @@ struct HiveRuntimeStreamingModeTests {
         builder.addNode(HiveNodeID("A")) { _ in
             HiveNodeOutput(
                 writes: [AnyHiveWrite(messagesKey, 10)],
-                next: .nodes([HiveNodeID("B")])
+                next: .to([HiveNodeID("B")])
             )
         }
         builder.addNode(HiveNodeID("B")) { _ in

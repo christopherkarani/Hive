@@ -2,9 +2,6 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-@available(*, deprecated, renamed: "HiveRuntimeStateSnapshot")
-public typealias HiveStateSnapshot<Schema: HiveSchema> = HiveRuntimeStateSnapshot<Schema>
-
 // MARK: - HiveRuntime
 
 /// Deterministic runtime for executing a compiled graph.
@@ -2674,7 +2671,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 break
             case .end:
                 continue
-            case .nodes(let nodes):
+            case .to(let nodes):
                 for node in nodes {
                     nextGraphSeeds.append(HiveTaskSeed(nodeID: node))
                 }
@@ -2702,7 +2699,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     }
                 case .end:
                     break
-                case .nodes(let nodes):
+                case .to(let nodes):
                     for node in nodes {
                         nextGraphSeeds.append(HiveTaskSeed(nodeID: node))
                     }

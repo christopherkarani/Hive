@@ -1,8 +1,8 @@
 /// Type registry keyed by channel ID for runtime type validation.
-public struct HiveChannelTypeRegistry<Schema: HiveSchema>: Sendable {
+struct HiveChannelTypeRegistry<Schema: HiveSchema>: Sendable {
     private let valueTypeIDsByID: [HiveChannelID: String]
 
-    public init(_ registry: HiveSchemaRegistry<Schema>) {
+    init(_ registry: HiveSchemaRegistry<Schema>) {
         var ids: [HiveChannelID: String] = [:]
         ids.reserveCapacity(registry.channelSpecs.count)
         for spec in registry.channelSpecs {
@@ -11,7 +11,7 @@ public struct HiveChannelTypeRegistry<Schema: HiveSchema>: Sendable {
         self.valueTypeIDsByID = ids
     }
 
-    public func cast<Value: Sendable>(
+    func cast<Value: Sendable>(
         _ value: any Sendable,
         for key: HiveChannelKey<Schema, Value>
     ) throws -> Value {

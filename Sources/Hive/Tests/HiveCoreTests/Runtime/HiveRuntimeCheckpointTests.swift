@@ -452,7 +452,7 @@ func testCheckpoint_PreservesDeferredFrontierAcrossResume() async throws {
     builder.addNode(HiveNodeID("main")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(logKey, ["main"])],
-            next: .nodes([HiveNodeID("summary"), HiveNodeID("cleanup")])
+            next: .to([HiveNodeID("summary"), HiveNodeID("cleanup")])
         )
     }
     builder.addNode(HiveNodeID("summary")) { _ in

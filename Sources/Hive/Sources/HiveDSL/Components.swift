@@ -10,16 +10,16 @@ public struct Node<Schema: HiveSchema>: WorkflowComponent, Sendable {
     public let retryPolicy: HiveRetryPolicy
 
     private let isStart: Bool
-    private let run: HiveNode<Schema>
+    private let run: NodeAction<Schema>
 
-    public init(_ id: String, retryPolicy: HiveRetryPolicy = .none, _ run: @escaping HiveNode<Schema>) {
+    public init(_ id: String, retryPolicy: HiveRetryPolicy = .none, _ run: @escaping NodeAction<Schema>) {
         self.id = HiveNodeID(id)
         self.retryPolicy = retryPolicy
         self.isStart = false
         self.run = run
     }
 
-    private init(id: HiveNodeID, retryPolicy: HiveRetryPolicy, isStart: Bool, run: @escaping HiveNode<Schema>) {
+    private init(id: HiveNodeID, retryPolicy: HiveRetryPolicy, isStart: Bool, run: @escaping NodeAction<Schema>) {
         self.id = id
         self.retryPolicy = retryPolicy
         self.isStart = isStart
@@ -28,6 +28,11 @@ public struct Node<Schema: HiveSchema>: WorkflowComponent, Sendable {
 
     public func start() -> Node<Schema> {
         Node(id: id, retryPolicy: retryPolicy, isStart: true, run: run)
+    }
+
+    /// Marks this node as an entry point for the workflow.
+    public func entryPoint() -> Node<Schema> {
+        start()
     }
 
     public func apply(to builder: inout HiveGraphBuilder<Schema>, design _: inout WorkflowDesign) throws {
@@ -118,11 +123,11 @@ public struct Branch<Schema: HiveSchema>: WorkflowComponent, Sendable {
     public struct RouteCase: Sendable {
         public let name: String
         public let when: @Sendable (HiveStoreView<Schema>) -> Bool
-        public let next: @Sendable () -> HiveNext
+        public let next: @Sendable () -> Route
     }
 
     public struct DefaultCase: Sendable {
-        public let next: @Sendable () -> HiveNext
+        public let next: @Sendable () -> Route
     }
 
     private let from: HiveNodeID

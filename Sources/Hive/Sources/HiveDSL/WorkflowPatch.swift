@@ -88,8 +88,8 @@ public struct WorkflowPatchResult<Schema: HiveSchema>: Sendable {
 /// Declarative patch operations for updating a compiled workflow graph.
 public struct WorkflowPatch<Schema: HiveSchema>: Sendable {
     private enum Operation: Sendable {
-        case replaceNode(id: HiveNodeID, retryPolicy: HiveRetryPolicy, run: HiveNode<Schema>)
-        case insertProbe(id: HiveNodeID, from: HiveNodeID, to: HiveNodeID, retryPolicy: HiveRetryPolicy, run: HiveNode<Schema>)
+        case replaceNode(id: HiveNodeID, retryPolicy: HiveRetryPolicy, run: NodeAction<Schema>)
+        case insertProbe(id: HiveNodeID, from: HiveNodeID, to: HiveNodeID, retryPolicy: HiveRetryPolicy, run: NodeAction<Schema>)
     }
 
     private var operations: [Operation] = []
@@ -100,7 +100,7 @@ public struct WorkflowPatch<Schema: HiveSchema>: Sendable {
     public mutating func replaceNode(
         _ id: String,
         retryPolicy: HiveRetryPolicy = .none,
-        _ run: @escaping HiveNode<Schema>
+        _ run: @escaping NodeAction<Schema>
     ) {
         operations.append(.replaceNode(id: HiveNodeID(id), retryPolicy: retryPolicy, run: run))
     }
@@ -112,7 +112,7 @@ public struct WorkflowPatch<Schema: HiveSchema>: Sendable {
         between from: String,
         and to: String,
         retryPolicy: HiveRetryPolicy = .none,
-        _ run: @escaping HiveNode<Schema>
+        _ run: @escaping NodeAction<Schema>
     ) {
         operations.append(
             .insertProbe(

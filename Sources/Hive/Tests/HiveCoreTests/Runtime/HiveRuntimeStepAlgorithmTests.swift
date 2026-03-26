@@ -87,11 +87,11 @@ func testRouterFreshRead_SeesOwnWriteNotOthers() async throws {
 
     builder.addRouter(from: HiveNodeID("A")) { view in
         let value = (try? view.get(valueKey)) ?? 0
-        return value == 1 ? .nodes([HiveNodeID("X")]) : .nodes([HiveNodeID("Y")])
+        return value == 1 ? .to([HiveNodeID("X")]) : .to([HiveNodeID("Y")])
     }
     builder.addRouter(from: HiveNodeID("B")) { view in
         let value = (try? view.get(valueKey)) ?? 0
-        return value == 1 ? .nodes([HiveNodeID("Y")]) : .nodes([HiveNodeID("X")])
+        return value == 1 ? .to([HiveNodeID("Y")]) : .to([HiveNodeID("X")])
     }
 
     let graph = try builder.compile()
@@ -578,7 +578,7 @@ func testRouterFreshRead_ErrorAbortsStep() async throws {
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
-    builder.addRouter(from: HiveNodeID("A")) { _ in .nodes([HiveNodeID("B")]) }
+    builder.addRouter(from: HiveNodeID("A")) { _ in .to([HiveNodeID("B")]) }
 
     let graph = try builder.compile()
     let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
@@ -717,7 +717,7 @@ func testDedupe_GraphSeedsOnly() async throws {
                 HiveTaskSeed(nodeID: HiveNodeID("C")),
                 HiveTaskSeed(nodeID: HiveNodeID("C"))
             ],
-            next: .nodes([HiveNodeID("B"), HiveNodeID("B")])
+            next: .to([HiveNodeID("B"), HiveNodeID("B")])
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
@@ -754,7 +754,7 @@ func testFrontierOrdering_GraphBeforeSpawn() async throws {
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(
             spawn: [HiveTaskSeed(nodeID: HiveNodeID("C"))],
-            next: .nodes([HiveNodeID("B")])
+            next: .to([HiveNodeID("B")])
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
@@ -791,7 +791,7 @@ func testJoinBarrier_IncludesSpawnParents() async throws {
     builder.addNode(HiveNodeID("S")) { _ in
         HiveNodeOutput(
             spawn: [HiveTaskSeed(nodeID: HiveNodeID("B"))],
-            next: .nodes([HiveNodeID("A")])
+            next: .to([HiveNodeID("A")])
         )
     }
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
@@ -828,7 +828,7 @@ func testJoinBarrier_TargetRunsEarly_DoesNotReset() async throws {
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("S")])
     builder.addNode(HiveNodeID("S")) { _ in
-        HiveNodeOutput(next: .nodes([HiveNodeID("J"), HiveNodeID("A")]))
+        HiveNodeOutput(next: .to([HiveNodeID("J"), HiveNodeID("A")]))
     }
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(spawn: [HiveTaskSeed(nodeID: HiveNodeID("B"))])
@@ -872,7 +872,7 @@ func testJoinBarrier_ConsumeOnlyWhenAvailable() async throws {
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
-    builder.addNode(HiveNodeID("J")) { _ in HiveNodeOutput(next: .nodes([HiveNodeID("A"), HiveNodeID("B")])) }
+    builder.addNode(HiveNodeID("J")) { _ in HiveNodeOutput(next: .to([HiveNodeID("A"), HiveNodeID("B")])) }
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()

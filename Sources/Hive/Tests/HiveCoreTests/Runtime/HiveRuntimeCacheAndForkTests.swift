@@ -292,7 +292,7 @@ func testDeferredNodes_ExecuteAfterMainFrontier() async throws {
     builder2.addNode(HiveNodeID("main")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(logKey, ["main"])],
-            next: .nodes([HiveNodeID("summary"), HiveNodeID("cleanup")])
+            next: .to([HiveNodeID("summary"), HiveNodeID("cleanup")])
         )
     }
     builder2.addNode(HiveNodeID("summary")) { _ in
@@ -511,7 +511,7 @@ func testGetState_NextNodesDeduplication() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .useGraphEdges) }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
-    builder.addRouter(from: HiveNodeID("A")) { _ in .nodes([HiveNodeID("B")]) }
+    builder.addRouter(from: HiveNodeID("A")) { _ in .to([HiveNodeID("B")]) }
 
     let graph = try builder.compile()
     let runtime = try HiveRuntime(graph: graph, environment: makeEnv2(context: ()))

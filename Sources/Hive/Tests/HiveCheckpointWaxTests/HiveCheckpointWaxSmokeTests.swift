@@ -5,7 +5,7 @@ import HiveCheckpointWax
 struct HiveCheckpointWaxSmokeTests {
 @Test("HiveCheckpointWax module loads")
 func hiveCheckpointWaxModuleLoads() {
-    #expect(HiveCheckpointWaxVersion.string == "0.0.0")
+    #expect(HiveVersion.checkpointWax == "0.0.0")
 }
 
 @Test("HiveCheckpointWax exposes HiveCore symbols")
