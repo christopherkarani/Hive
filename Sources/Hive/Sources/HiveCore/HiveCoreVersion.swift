@@ -1,10 +1,10 @@
 /// Namespace for the Hive framework version information.
 public enum HiveVersion {
     /// Semantic version string for the Hive umbrella module.
-    public static let string = "0.0.0"
+    public static let string = "0.2.0"
 
     /// Semantic version string for HiveCore.
-    public static let core = "0.0.0"
+    public static let core = "0.2.0"
 
     /// All module versions as a dictionary.
     public static var all: [String: String] {
