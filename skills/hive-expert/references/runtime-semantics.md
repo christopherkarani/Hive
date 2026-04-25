@@ -5,7 +5,7 @@ For each step:
 1. Emit `stepStarted`.
 1. Execute each task in the frontier (bounded concurrency), emitting:
    - `taskStarted` / `taskFinished` / `taskFailed`
-   - stream events (`modelToken`, tool events, `customDebug`) via node emitters
+   - stream events (`customDebug`) via node emitters
 1. Commit (all-or-nothing):
    - validate all writes against schema + types
    - enforce update policies
@@ -34,9 +34,6 @@ If commit fails, the step is aborted and there is no partial application of writ
 
 ## Events + Backpressure
 - Events are emitted via an internal stream controller with a bounded buffer.
-- Under backpressure, Hive may drop/coalesce:
-  - `.modelToken(...)`
-  - `.customDebug(...)`
+- Under backpressure, Hive may drop/coalesce `.customDebug(...)`.
 - Non-droppable lifecycle events can still block producers if the consumer is slow.
-- If `deterministicTokenStreaming` is enabled, stream events may be buffered to preserve stable ordering (better for golden tests, worse for live UX).
-
+- If `deterministicStreamBuffering` is enabled, stream events may be buffered to preserve stable ordering.

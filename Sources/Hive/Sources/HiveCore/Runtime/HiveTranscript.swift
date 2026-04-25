@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public struct HiveTranscriptNormalizationOptions: Sendable, Equatable {
@@ -124,7 +123,7 @@ public struct HiveEventTranscript: Codable, Sendable, Equatable {
 
     public func transcriptHash() throws -> String {
         let data = try stableData()
-        let digest = SHA256.hash(data: data)
+        let digest = HiveSHA256.hash(data: data)
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
@@ -279,7 +278,7 @@ public struct HiveTranscriptDiff: Sendable, Equatable {
             data.append(0)
         }
 
-        let digest = SHA256.hash(data: data)
+        let digest = HiveSHA256.hash(data: data)
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
@@ -345,11 +344,6 @@ private extension HiveEventKind {
         case .checkpointLoaded: return "checkpoint.loaded"
         case .storeSnapshot: return "store.snapshot"
         case .channelUpdates: return "channel.updates"
-        case .modelInvocationStarted: return "model.started"
-        case .modelToken: return "model.token"
-        case .modelInvocationFinished: return "model.finished"
-        case .toolInvocationStarted: return "tool.started"
-        case .toolInvocationFinished: return "tool.finished"
         case .streamBackpressure: return "stream.backpressure"
         case .customDebug: return "debug.custom"
         }
@@ -407,21 +401,8 @@ private extension HiveEventKind {
             return ["channels": channelValues.map(\.channelID.rawValue).joined(separator: ",")]
         case .channelUpdates(let channelValues):
             return ["channels": channelValues.map(\.channelID.rawValue).joined(separator: ",")]
-        case .modelInvocationStarted(let model):
-            return ["model": model]
-        case .modelToken(let text):
-            return ["text": text]
-        case .modelInvocationFinished:
-            return [:]
-        case .toolInvocationStarted(let name):
-            return ["name": name]
-        case .toolInvocationFinished(let name, let success):
-            return ["name": name, "success": success ? "true" : "false"]
-        case .streamBackpressure(let droppedModelTokenEvents, let droppedDebugEvents):
-            return [
-                "droppedModelTokenEvents": String(droppedModelTokenEvents),
-                "droppedDebugEvents": String(droppedDebugEvents)
-            ]
+        case .streamBackpressure(let droppedDebugEvents):
+            return ["droppedDebugEvents": String(droppedDebugEvents)]
         case .customDebug(let name):
             return ["name": name]
         }

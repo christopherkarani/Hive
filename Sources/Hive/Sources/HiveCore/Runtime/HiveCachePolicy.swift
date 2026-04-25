@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 // MARK: - Protocol
@@ -126,7 +125,7 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
         channelIDs: [HiveChannelID],
         store: HiveStoreView<Schema>
     ) -> String {
-        var hasher = SHA256()
+        var hasher = HiveSHA256.Hasher()
         hasher.update(data: Data(nodeID.rawValue.utf8))
         for id in channelIDs.sorted(by: { $0.rawValue < $1.rawValue }) {
             hasher.update(data: Data(id.rawValue.utf8))
@@ -146,7 +145,7 @@ public struct HiveCachePolicy<Schema: HiveSchema>: Sendable {
         store: HiveStoreView<Schema>,
         sortedGlobalSpecs: [AnyHiveChannelSpec<Schema>]
     ) -> String {
-        var hasher = SHA256()
+        var hasher = HiveSHA256.Hasher()
         for spec in sortedGlobalSpecs {
             hasher.update(data: Data(spec.id.rawValue.utf8))
             if let encodeBox = spec._encodeBox,

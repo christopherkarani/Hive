@@ -109,7 +109,7 @@ func stepsViewFiltersAndPreservesOrder() async throws {
 
     continuation.yield(makeEvent(index: 0, kind: .runStarted(threadID: HiveThreadID("t"))))
     continuation.yield(makeEvent(index: 1, kind: .stepStarted(stepIndex: 0, frontierCount: 1)))
-    continuation.yield(makeEvent(index: 2, kind: .modelToken(text: "x")))
+    continuation.yield(makeEvent(index: 2, kind: .customDebug(name: "x")))
     continuation.yield(makeEvent(index: 3, kind: .stepFinished(stepIndex: 0, nextFrontierCount: 0)))
     continuation.finish()
 
@@ -127,7 +127,7 @@ func tasksViewFilters() async throws {
     await Task.yield()
 
     continuation.yield(makeEvent(index: 0, kind: .taskStarted(node: HiveNodeID("A"), taskID: HiveTaskID("t0"))))
-    continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "x")))
+    continuation.yield(makeEvent(index: 1, kind: .customDebug(name: "x")))
     continuation.yield(makeEvent(index: 2, kind: .taskFailed(node: HiveNodeID("A"), taskID: HiveTaskID("t0"), errorDescription: "boom")))
     continuation.finish()
 
@@ -136,17 +136,17 @@ func tasksViewFilters() async throws {
     #expect(events.map(\.id.eventIndex) == [0, 2])
 }
 
-@Test("model() propagates errors from the source stream")
-func modelViewPropagatesError() async throws {
+@Test("debug() propagates errors from the source stream")
+func debugViewPropagatesError() async throws {
     let (source, continuation) = makeSourceStream()
     let views = HiveEventStreamViews(source)
 
     let task = Task {
-        _ = try await collect(views.model())
+        _ = try await collect(views.debug())
     }
     await Task.yield()
 
-    continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+    continuation.yield(makeEvent(index: 0, kind: .customDebug(name: "x")))
     continuation.finish(throwing: TestError.expected)
 
     do {
@@ -183,7 +183,7 @@ func viewCancellationStopsPromptly() async throws {
     let latch = Latch()
     let consume = Task {
         var seen: [UInt64] = []
-        for try await event in views.model() {
+        for try await event in views.debug() {
             try Task.checkCancellation()
             seen.append(event.id.eventIndex)
             if seen.count == 1 {
@@ -194,12 +194,12 @@ func viewCancellationStopsPromptly() async throws {
     }
     await Task.yield()
 
-    continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+    continuation.yield(makeEvent(index: 0, kind: .customDebug(name: "x")))
     await latch.wait()
     consume.cancel()
     await Task.yield()
-    continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "y")))
-    continuation.yield(makeEvent(index: 2, kind: .modelToken(text: "z")))
+    continuation.yield(makeEvent(index: 1, kind: .customDebug(name: "y")))
+    continuation.yield(makeEvent(index: 2, kind: .customDebug(name: "z")))
     continuation.finish()
 
     do {
@@ -224,12 +224,12 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     }
 
     let firstConsumer = Task {
-        var iterator = views.model().makeAsyncIterator()
+        var iterator = views.debug().makeAsyncIterator()
         _ = try await iterator.next()
     }
 
     await Task.yield()
-    continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+    continuation.yield(makeEvent(index: 0, kind: .customDebug(name: "x")))
     _ = try await firstConsumer.value
 
     for _ in 0 ..< 5 {
@@ -240,7 +240,7 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     let probeIndex: UInt64 = 9_999
     let secondConsumer = Task {
         var indices: [UInt64] = []
-        for try await event in views.model() {
+        for try await event in views.debug() {
             if event.id.eventIndex == probeIndex {
                 await secondSubscriberReady.signal()
                 continue
@@ -252,7 +252,7 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
 
     let probeEmitter = Task {
         while Task.isCancelled == false {
-            continuation.yield(makeEvent(index: probeIndex, kind: .modelToken(text: "probe")))
+            continuation.yield(makeEvent(index: probeIndex, kind: .customDebug(name: "probe")))
             await Task.yield()
         }
     }
@@ -261,7 +261,7 @@ func droppingAllSubscribersKeepsSourceAlive() async throws {
     _ = await probeEmitter.result
     #expect(secondSubscriberObservedProbe)
 
-    continuation.yield(makeEvent(index: 1, kind: .modelToken(text: "y")))
+    continuation.yield(makeEvent(index: 1, kind: .customDebug(name: "y")))
     continuation.finish()
 
     let eventIndices = try await secondConsumer.value
@@ -282,8 +282,8 @@ func droppingLastViewReleasesSourcePump() async throws {
     }
 
     var views: HiveEventStreamViews? = HiveEventStreamViews(source)
-    var stream: AsyncThrowingStream<HiveModelEvent, Error>? = views?.model()
-    let firstEvent: HiveModelEvent? = try await {
+    var stream: AsyncThrowingStream<HiveDebugEvent, Error>? = views?.debug()
+    let firstEvent: HiveDebugEvent? = try await {
         let consumerStream = stream!
         let consumer = Task {
             var iterator = consumerStream.makeAsyncIterator()
@@ -291,7 +291,7 @@ func droppingLastViewReleasesSourcePump() async throws {
         }
 
         await Task.yield()
-        continuation.yield(makeEvent(index: 0, kind: .modelToken(text: "x")))
+        continuation.yield(makeEvent(index: 0, kind: .customDebug(name: "x")))
         return try await consumer.value
     }()
     #expect(firstEvent?.id.eventIndex == 0)

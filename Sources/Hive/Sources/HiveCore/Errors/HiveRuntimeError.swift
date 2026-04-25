@@ -61,13 +61,7 @@ public enum HiveRuntimeError: Error, Sendable {
 
     case updatePolicyViolation(channelID: HiveChannelID, policy: HiveUpdatePolicy, writeCount: Int)
     case taskLocalWriteNotAllowed
-    case invalidMessagesUpdate
     case missingTaskLocalValue(channelID: HiveChannelID)
-
-    case modelClientMissing
-    case modelStreamInvalid(String)
-    case toolRegistryMissing
-    case modelToolLoopMaxModelInvocationsExceeded(maxModelInvocations: Int)
 
     case internalInvariantViolation(String)
 }

@@ -23,18 +23,6 @@ public enum Route: Sendable, Equatable {
     }
 }
 
-/// Deprecated: Use `Route` instead.
-@available(*, deprecated, renamed: "Route")
-public typealias HiveNext = Route
-
-extension Route {
-    /// Deprecated: Use `.to([...])` instead.
-    @available(*, deprecated, renamed: "to")
-    public static func nodes(_ nodes: [HiveNodeID]) -> Route {
-        .to(nodes)
-    }
-}
-
 extension Route: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         self = .to([HiveNodeID(value)])

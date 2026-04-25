@@ -2,8 +2,6 @@ import Foundation
 
 internal enum HiveEventEnqueueResult: Sendable {
     case enqueued
-    case coalescedModelToken
-    case droppedModelToken
     case droppedDebug
     case terminated
 }
@@ -167,15 +165,6 @@ internal final class HiveEventStreamController: @unchecked Sendable {
 
         if treatAsNonDroppable == false, isDroppable(kind) {
             if queue.count >= capacity {
-                if case let .modelToken(text) = kind,
-                   stepIndex != nil,
-                   taskOrdinal != nil,
-                   tryCoalesceModelToken(text: text, stepIndex: stepIndex!, taskOrdinal: taskOrdinal!)
-                {
-                    return .coalescedModelToken
-                }
-
-                if isDroppableModelToken(kind) { return .droppedModelToken }
                 return .droppedDebug
             }
 
@@ -225,8 +214,9 @@ internal final class HiveEventStreamController: @unchecked Sendable {
                     case .dropped:
                         // `.bufferingOldest` reports `.dropped` when this event could not be delivered.
                         // Droppable events are intentionally discarded; non-droppable events must stay queued
-                        // and retry until a consumer makes space.
-                        if isDroppable(event.kind) {
+                        // and retry until a consumer makes space. Once the run has finished, an unconsumed
+                        // stream must be allowed to terminate instead of keeping the pump alive forever.
+                        if isDroppable(event.kind) || isFinished {
                             consumeFirst()
                         } else {
                             Thread.sleep(forTimeInterval: 0.00025)
@@ -288,26 +278,8 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         condition.unlock()
     }
 
-    private func tryCoalesceModelToken(text: String, stepIndex: Int, taskOrdinal: Int) -> Bool {
-        guard let last = queue.last else { return false }
-        guard last.id.stepIndex == stepIndex, last.id.taskOrdinal == taskOrdinal else { return false }
-        guard case let .modelToken(existing) = last.kind else { return false }
-        let coalesced = HiveEvent(
-            id: last.id,
-            kind: .modelToken(text: existing + text),
-            metadata: last.metadata
-        )
-        queue.replaceLast(with: coalesced)
-        return true
-    }
-
     private func isDroppable(_ kind: HiveEventKind) -> Bool {
-        isDroppableModelToken(kind) || isDroppableDebug(kind)
-    }
-
-    private func isDroppableModelToken(_ kind: HiveEventKind) -> Bool {
-        if case .modelToken = kind { return true }
-        return false
+        isDroppableDebug(kind)
     }
 
     private func isDroppableDebug(_ kind: HiveEventKind) -> Bool {
@@ -325,5 +297,12 @@ internal final class HiveEventStreamController: @unchecked Sendable {
         }
         condition.broadcast()
         condition.unlock()
+    }
+
+    private var isFinished: Bool {
+        condition.lock()
+        let finished = finishState != nil
+        condition.unlock()
+        return finished
     }
 }

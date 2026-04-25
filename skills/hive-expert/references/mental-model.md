@@ -1,6 +1,6 @@
 # Hive Mental Model
 
-Hive is a deterministic, superstep-based (BSP-style) runtime for agent workflows.
+Hive is a deterministic, superstep-based (BSP-style) runtime for Swift graph workflows.
 
 ## Core Concepts
 
@@ -29,7 +29,7 @@ In each superstep:
 1. Each task produces a `HiveNodeOutput`:
    - `writes`: channel writes
    - `spawn`: `HiveTaskSeed`s to schedule next step tasks (fan-out)
-   - `next`: routing decision (`HiveNext`)
+   - `next`: routing decision (`Route`)
    - `interrupt`: optional interrupt request
 1. The runtime commits:
    - merges writes using reducers + update policy rules
@@ -38,7 +38,7 @@ In each superstep:
 
 ### Edges, Routers, Joins
 - Static edges (`addEdge`) are used when `next == .useGraphEdges`.
-- Routers (`addRouter`) deterministically compute `HiveNext` from a store view.
+- Routers (`addRouter`) deterministically compute `Route` from a store view.
 - Join edges (`addJoinEdge`) implement reusable barriers:
   - a join target runs only after all parents have “fired” since the last barrier consumption
   - barrier state is persisted in checkpoints
@@ -55,4 +55,3 @@ In each superstep:
   - `recipes-fanout-join.md`
   - `recipes-interrupt-resume.md`
   - `recipes-checkpointing.md`
-

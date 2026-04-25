@@ -37,11 +37,7 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
     public let context: Schema.Context
     public let clock: any HiveClock
     public let logger: any HiveLogger
-    public let model: AnyHiveModelClient?
-    public let modelRouter: (any HiveModelRouter)?
-    public let tools: AnyHiveToolRegistry?
     public let checkpointStore: AnyHiveCheckpointStore<Schema>?
-    public let memoryStore: AnyHiveMemoryStore?
 }
 ```
 
@@ -131,8 +127,8 @@ Seeds are deduplicated by `(nodeID, taskLocalFingerprint)`.
 | Task | `taskStarted(node, taskID)`, `taskFinished(node, taskID)`, `taskFailed(node, taskID, error)` |
 | Writes | `writeApplied(channelID, payloadHash)` |
 | Checkpoint | `checkpointSaved(id)`, `checkpointLoaded(id)` |
-| Model | `modelInvocationStarted`, `modelToken`, `modelInvocationFinished` |
-| Tools | `toolInvocationStarted`, `toolInvocationFinished` |
+| Snapshots | `storeSnapshot`, `channelUpdates` |
+| Debug | `customDebug`, `streamBackpressure` |
 
 ### Streaming Modes
 
@@ -190,7 +186,7 @@ let options = HiveRunOptions(
     maxConcurrentTasks: 4,
     checkpointPolicy: .everyStep,
     debugPayloads: true,
-    deterministicTokenStreaming: true,
+    deterministicStreamBuffering: true,
     eventBufferCapacity: 2048,
     streamingMode: .combined
 )
@@ -204,4 +200,4 @@ let options = HiveRunOptions(
 4. **Deterministic checkpoint IDs** — SHA-256 of `"HCP1" + runID + stepIndex`
 5. **Atomic superstep commits** — all writes apply together, sorted by `(taskOrdinal, emissionIndex)`
 6. **Sorted channel iteration** — `registry.sortedChannelSpecs` ensures consistent processing
-7. **Deterministic token streaming** — buffer model tokens per-task, replay in ordinal order
+7. **Deterministic stream events** — buffer custom stream events per-task, replay in ordinal order

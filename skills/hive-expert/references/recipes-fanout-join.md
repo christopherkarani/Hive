@@ -19,16 +19,10 @@ Run N workers in parallel (fan-out), then run a join/aggregate node only after a
    - parents: the set of worker node IDs (and any other parent nodes that must participate)
    - target: the aggregator node ID
 
-## Use HiveDSL When
-- You want composable components and effects.
-
-### Sketch (DSL)
-1. Use `Node("FanOut") { input in ... }` to compute work and `SpawnEach(...)` (or explicit spawn seeds) to schedule workers.
-1. Use `Join(parents: [...], to: "Aggregate")` to gate aggregation.
-1. Reducer choice is the design lever:
-   - append for logs/results
-   - setUnion for dedup
-   - dictionaryMerge for keyed aggregations
+## Reducer Choice
+- Use append for ordered logs/results.
+- Use set union for deduplication.
+- Use dictionary merge for keyed aggregations.
 
 ## Common Failure Modes
 - Join never fires:
@@ -37,4 +31,3 @@ Run N workers in parallel (fan-out), then run a join/aggregate node only after a
 - Aggregation is non-deterministic:
   - Reducer depends on unordered iteration (e.g., plain dictionary iteration).
   - Writes include timestamps/random values.
-

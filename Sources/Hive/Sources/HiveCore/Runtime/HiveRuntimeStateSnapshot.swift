@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Stable interruption metadata included in runtime state snapshots.
@@ -128,7 +127,7 @@ public struct HiveRuntimeStateSnapshot<Schema: HiveSchema>: Sendable {
             data.append(0)
         }
 
-        let digest = SHA256.hash(data: data)
+        let digest = HiveSHA256.hash(data: data)
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 }

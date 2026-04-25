@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Task-local fingerprint computation and hashing.
@@ -15,7 +14,7 @@ enum HiveTaskLocalFingerprint {
             overlay: overlay,
             debugPayloads: debugPayloads
         )
-        let hash = SHA256.hash(data: canonical)
+        let hash = HiveSHA256.hash(data: canonical)
         return Data(hash)
     }
 

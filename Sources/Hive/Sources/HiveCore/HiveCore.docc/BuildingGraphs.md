@@ -4,7 +4,7 @@ Construct workflow graphs with the imperative graph builder, validate them, and 
 
 ## Overview
 
-A compiled graph is the executable representation of a workflow — it contains nodes, edges, routers, and join barriers validated by the compiler. You can build graphs imperatively with ``HiveGraphBuilder`` or declaratively with the `Workflow` DSL. This article covers the imperative API.
+A compiled graph is the executable representation of a workflow. It contains nodes, edges, routers, and join barriers validated by the compiler. Build graphs explicitly with ``HiveGraphBuilder``.
 
 ## HiveGraphBuilder
 
@@ -46,7 +46,7 @@ Routers provide dynamic routing based on post-commit state:
 
 ```swift
 builder.addRouter(from: HiveNodeID("A")) { storeView in
-    .nodes([HiveNodeID("B")])
+    .to([HiveNodeID("B")])
 }
 ```
 

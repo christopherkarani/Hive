@@ -17,8 +17,8 @@
 
 ## Golden Tests
 When you need reproducible traces:
-- Enable `HiveRunOptions(deterministicTokenStreaming: true)`.
-- Consider increasing `eventBufferCapacity` to avoid token/debug drops.
+- Enable `HiveRunOptions(deterministicStreamBuffering: true)`.
+- Consider increasing `eventBufferCapacity` to avoid debug event drops.
 - Prefer asserting against:
   - `HiveRunOutcome` + projected outputs
   - event kinds in order (avoid matching on timing-dependent metadata)
@@ -26,5 +26,4 @@ When you need reproducible traces:
 ## Common Determinism Pitfalls
 - Reducer uses unordered iteration (dictionary traversal without sorting).
 - Node writes include timestamps/randomness without seeding.
-- Tool definitions differ between runs (e.g., unstable JSON schema strings).
-
+- Event metadata contains unstable values.

@@ -16,32 +16,17 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
     public let context: Schema.Context
     public let clock: any HiveClock
     public let logger: any HiveLogger
-    public let model: AnyHiveModelClient?
-    public let modelRouter: (any HiveModelRouter)?
-    public let inferenceHints: HiveInferenceHints?
-    public let tools: AnyHiveToolRegistry?
     public let checkpointStore: AnyHiveCheckpointStore<Schema>?
-    public let memoryStore: AnyHiveMemoryStore?
 
     public init(
         context: Schema.Context,
         clock: any HiveClock,
         logger: any HiveLogger,
-        model: AnyHiveModelClient? = nil,
-        modelRouter: (any HiveModelRouter)? = nil,
-        inferenceHints: HiveInferenceHints? = nil,
-        tools: AnyHiveToolRegistry? = nil,
-        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil,
-        memoryStore: AnyHiveMemoryStore? = nil
+        checkpointStore: AnyHiveCheckpointStore<Schema>? = nil
     ) {
         self.context = context
         self.clock = clock
         self.logger = logger
-        self.model = model
-        self.modelRouter = modelRouter
-        self.inferenceHints = inferenceHints
-        self.tools = tools
         self.checkpointStore = checkpointStore
-        self.memoryStore = memoryStore
     }
 }

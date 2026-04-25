@@ -5,7 +5,7 @@ public extension HiveReducer {
     }
 
     /// Combines current and update using a caller-supplied binary operator.
-    /// Equivalent to LangGraph's `BinaryOperatorAggregate`.
+    /// Folds all updates into the current value using the supplied binary operation.
     static func binaryOp(
         _ op: @escaping @Sendable (Value, Value) -> Value
     ) -> HiveReducer<Value> {

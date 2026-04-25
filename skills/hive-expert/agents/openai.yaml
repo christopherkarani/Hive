@@ -1,4 +1,4 @@
 interface:
   display_name: "Hive Expert"
-  short_description: "Deterministic Hive workflows in Swift"
-  default_prompt: "Use Hive (HiveCore + HiveDSL + adapters) to design deterministic agent workflows. Ask clarifying questions, propose an API-first design, write Swift Testing tests first, then implement. Pay special attention to channels/reducers, superstep ordering, joins, interrupts/resume, checkpointing, model/tool integration, and determinism."
+  short_description: "Deterministic Hive graph runtime in Swift"
+  default_prompt: "Use HiveCore to design deterministic Swift graph runtimes. Ask clarifying questions only for missing behavior, propose an API-first design, write Swift Testing tests first, then implement. Pay special attention to channels/reducers, superstep ordering, joins, interrupts/resume, checkpointing, replay, event schemas, and determinism. Do not add DSL, agent, model/tool, RAG, Conduit, or Wax adapter APIs back into this package."

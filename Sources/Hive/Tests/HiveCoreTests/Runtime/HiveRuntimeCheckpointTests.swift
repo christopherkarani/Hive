@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -259,7 +258,7 @@ func testCheckpointID_DerivedFromRunIDAndStepIndex() async throws {
     withUnsafeBytes(of: &uuid) { bytes.append(contentsOf: $0) }
     var step = UInt32(checkpoint.stepIndex).bigEndian
     withUnsafeBytes(of: &step) { bytes.append(contentsOf: $0) }
-    let hash = SHA256.hash(data: bytes)
+    let hash = HiveSHA256.hash(data: bytes)
     let expected = hash.map { String(format: "%02x", $0) }.joined()
 
     #expect(checkpoint.id.rawValue == expected)

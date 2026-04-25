@@ -1,62 +1,36 @@
-# Public API Map (What to Import, When)
+# Public API Map
 
 ## Imports
-- One-stop: `import Hive` (re-exports `HiveCore`, `HiveDSL`, `HiveConduit`, `HiveCheckpointWax`)
-- Minimal core: `import HiveCore`
-- DSL-only: `import HiveDSL` (re-exports `HiveCore`)
-- Inference adapter: `import HiveConduit` (re-exports `HiveCore`)
-- Checkpoint adapter: `import HiveCheckpointWax` (re-exports `HiveCore`)
-- RAG primitives: `import HiveRAGWax` (re-exports `HiveDSL`)
-- Macros: `import HiveMacros` (optional compiler plugin)
+- One-stop: `import Hive` re-exports `HiveCore`.
+- Minimal core: `import HiveCore`.
 
-## HiveCore (Core Runtime)
+## Products and Targets
+- `Hive`: umbrella library that only re-exports `HiveCore`.
+- `HiveCore`: deterministic graph runtime.
+- `HiveTinyGraphExample`: executable example using `HiveGraphBuilder`.
+
+## HiveCore
 - Schema + channels:
   - `HiveSchema`
   - `HiveChannelID`, `HiveChannelKey`, `HiveChannelSpec`, `AnyHiveChannelSpec`
-  - `HiveReducer` (+ standard reducers)
+  - `HiveReducer` and standard reducers
   - `HiveCodec`, `HiveAnyCodec`, `HiveJSONCodec`
 - Graph compilation:
   - `HiveGraphBuilder`
-  - `HiveNodeID`, `HiveNext`, `HiveRouter`
+  - `HiveNodeID`, `Route`, `HiveRouter`
   - `HiveJoinEdge`, `HiveOutputProjection`, `CompiledHiveGraph`
 - Runtime execution:
-  - `HiveRuntime` (actor)
+  - `HiveRuntime`
   - `HiveRunOptions`, `HiveCheckpointPolicy`
   - `HiveRunHandle`, `HiveRunOutcome`, `HiveRunOutput`
-  - Events: `HiveEvent`, `HiveEventKind`, `HiveEventID`
+  - `HiveEvent`, `HiveEventKind`, `HiveEventID`
 - Interrupt/resume:
   - `HiveInterruptRequest`, `HiveInterrupt`, `HiveResume`, `HiveInterruption`, `HiveInterruptID`
+- Checkpoints and replay:
+  - `HiveCheckpointStore`, `AnyHiveCheckpointStore`, `InMemoryHiveCheckpointStore`
+  - checkpoint records, metadata, selectors, and replay compatibility helpers
 - Environment:
   - `HiveEnvironment`, `HiveClock`, `HiveLogger`
-- Hybrid inference contracts (adapter interfaces, not implementations):
-  - `HiveModelClient`, `AnyHiveModelClient`
-  - `HiveToolRegistry`, `AnyHiveToolRegistry`
-  - `HiveModelRouter`, `HiveInferenceHints`
-  - Chat types: `HiveChatMessage`, `HiveChatRequest`, `HiveChatResponse`, `HiveToolDefinition`, `HiveToolCall`, `HiveToolResult`
 
-## HiveDSL (Workflow Composition)
-- Workflow assembly:
-  - `Workflow`, `WorkflowBundle`, `WorkflowComponent`, `AnyWorkflowComponent`
-- Graph pieces:
-  - `Node`, `Edge`, `Join`, `Chain`, `Branch`
-- Effects:
-  - `Effects { ... }`, `Set`, `Append`, `GoTo`, `UseGraphEdges`, `End`, `Interrupt`, `SpawnEach`
-- Model turn:
-  - `ModelTurn` with `.tools(...)` and `.writes(to: ...)`
-- Patching/diff:
-  - `WorkflowPatch`, `WorkflowDiff` (Mermaid rendering)
-
-## HiveConduit (Model Adapter)
-- `ConduitModelClient`: implements `HiveModelClient` using Conduit `TextGenerator`.
-- Key contract: streaming MUST end with exactly one final response.
-
-## HiveCheckpointWax (Checkpoint Store)
-- `HiveCheckpointWaxStore`: implements checkpoint persistence via Wax frames.
-
-## HiveRAGWax (RAG Primitives)
-- `WaxRecall`: DSL component; runs recall and writes `[HiveRAGSnippet]` to a channel.
-- `HiveRAGSnippet`: checkpoint-friendly snippet format.
-
-## HiveMacros (Optional)
-- `@HiveSchema`, `@Channel`, `@TaskLocalChannel`, `@WorkflowBlueprint`
-
+## Removed Surfaces
+This package no longer exposes DSL, agent, chat/model/tool, memory/RAG, Conduit, Wax adapter, or macro APIs.

@@ -1,66 +1,47 @@
-# Troubleshooting (Symptom → Cause → Fix)
+# Troubleshooting
 
-## Compile-Time (Graph / DSL)
+## Compile-Time Graph Errors
 
 ### `HiveCompilationError.startEmpty`
 - Cause: graph has no start nodes.
-- Fix: set start nodes in `HiveGraphBuilder(start:)` or mark a DSL node with `.start()`.
+- Fix: set start nodes in `HiveGraphBuilder(start:)`.
 
-### `HiveCompilationError.unknown*` (edge/router/join endpoints)
+### `HiveCompilationError.unknown*`
 - Cause: graph references a node ID that was never added.
-- Fix: add the node or correct the ID spelling.
+- Fix: add the node or correct the edge/router/join endpoint.
 
 ### `HiveCompilationError.duplicateNodeID` / `duplicateRouter`
-- Cause: added the same node/router twice.
-- Fix: ensure unique IDs and single router per `from` node.
-
-### `HiveDSLCompilationError.branchDefaultMissing`
-- Cause: `Branch(from:)` is missing `.default { ... }`.
-- Fix: add a `.default { UseGraphEdges() }` (or equivalent).
-
-### `HiveDSLCompilationError.chainMissingStart`
-- Cause: `Chain` uses `.then(...)` before `.start(...)`.
-- Fix: ensure the first link is `.start("NodeID")`.
+- Cause: added the same node or router twice.
+- Fix: ensure unique IDs and one router per source node.
 
 ## Runtime Before Step 0
 
-### Missing codec errors / registry init failures
-- Cause: checkpointed channels without codecs (global or task-local).
-- Fix: add codecs (or use JSON codec via schema/macro defaults) for all checkpointed channels.
+### Missing codec or registry init failure
+- Cause: checkpointed channels without codecs.
+- Fix: add codecs for all checkpointed global and task-local channels.
 
-### Checkpoint load fails (version/fingerprint mismatch)
-- Cause: schema/graph changed since checkpoint was created.
-- Fix: migrate or discard old checkpoints; keep codec IDs/types stable.
+### Checkpoint load fails
+- Cause: schema, graph, channel fingerprint, or join barrier shape changed since the checkpoint was written.
+- Fix: migrate or discard old checkpoints; keep codec IDs and channel types stable.
 
-## Runtime During a Step (No Commit)
+## Runtime During a Step
 
 ### Unknown channel write
-- Cause: node wrote to a channel ID not in schema.
+- Cause: node wrote to a channel ID not present in the schema.
 - Fix: define the channel spec and use `HiveChannelKey` consistently.
 
 ### `updatePolicyViolation`
 - Cause: multiple writes to a `.single` channel within a step.
-- Fix: set `updatePolicy: .multi`, or aggregate earlier to a single write.
+- Fix: use `.multi`, or aggregate earlier to one write.
 
 ### Reducer throws
-- Cause: reducer not total for all values (or throws for certain states).
-- Fix: make reducer total/deterministic; validate inputs.
+- Cause: reducer is not total or depends on invalid input state.
+- Fix: make reducer behavior total and deterministic.
 
-### Checkpoint save fails (when enabled)
+### Checkpoint save fails
 - Cause: encode errors or backend store failure.
-- Fix: ensure checkpointed values are encodable with their codecs; debug backend errors.
+- Fix: ensure checkpointed values encode with their codecs and inspect the store error.
 
-## Model/Tool Issues
-
-### `modelClientMissing`
-- Cause: model turn runs without `environment.model` and without a router.
-- Fix: provide `AnyHiveModelClient` or `HiveModelRouter`.
-
-### `modelStreamInvalid`
-- Cause: stream missing final, multiple finals, or token after final.
-- Fix: fix model adapter to satisfy the `.final` contract.
-
-### Tool invocation errors
-- Cause: invalid JSON arguments (`argumentsJSON` must be a JSON object string for some adapters), schema mismatch.
-- Fix: validate tool JSON schema strings and tool argument encoding/decoding.
-
+## Event Drift
+- Cause: nondeterministic metadata, small event buffer capacity, or live stream ordering.
+- Fix: use stable metadata and `HiveRunOptions(deterministicStreamBuffering: true)` for golden traces.

@@ -1,6 +1,6 @@
 # Hive Examples
 
-These runnable SwiftPM examples target Apple platforms and focus on the core Hive execution model.
+These runnable SwiftPM examples focus on the core Hive graph runtime.
 
 ## Tiny Graph (Send + Interrupt/Resume)
 
@@ -9,17 +9,10 @@ This example shows:
 - Task-local payloads passed to workers
 - Interrupt and resume with checkpointing
 
-Run (macOS):
+Run:
 ```sh
-cd libs/hive
 swift run HiveTinyGraphExample
 ```
-
-Run (Xcode):
-```sh
-open libs/hive/Package.swift
-```
-Select the `HiveTinyGraphExample` scheme and run on macOS. To run on iOS, embed the example code in an app target and use an iOS simulator.
 
 Expected output (shape):
 ```text

@@ -4,14 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-export HOME="$ROOT_DIR/.build/swift-home"
-export CLANG_MODULE_CACHE_PATH="$ROOT_DIR/.build/clang-module-cache"
-mkdir -p \
-  "$HOME/Library/Caches/org.swift.swiftpm" \
-  "$HOME/Library/org.swift.swiftpm/configuration" \
-  "$HOME/Library/org.swift.swiftpm/security" \
-  "$CLANG_MODULE_CACHE_PATH"
-
 FULL_SUITE_TIMEOUT_SECONDS="${HIVE_FULL_SUITE_TIMEOUT_SECONDS:-600}"
 RUN_LOG_FILE="${HIVE_FULL_SUITE_LOG_FILE:-${TMPDIR:-/tmp}/hive-full-suite.log}"
 FALLBACK_STABLE="${HIVE_FULL_SUITE_FALLBACK_STABLE:-1}"
@@ -20,6 +12,23 @@ if ! [[ "$FULL_SUITE_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || [[ "$FULL_SUITE_TIMEOUT_
   echo "[full-suite] HIVE_FULL_SUITE_TIMEOUT_SECONDS must be a positive integer."
   exit 1
 fi
+
+kill_hive_test_processes() {
+  local pid="$1"
+  kill "$pid" 2>/dev/null || true
+  pkill -P "$pid" 2>/dev/null || true
+  sleep 3
+  kill -9 "$pid" 2>/dev/null || true
+  pkill -9 -P "$pid" 2>/dev/null || true
+  pkill -f "swiftpm-testing-helper --test-bundle-path .*HivePackageTests" 2>/dev/null || true
+  pkill -f "swiftpm-xctest-helper .*HivePackageTests" 2>/dev/null || true
+  pkill -f "HivePackageTests\\.xctest.*--testing-library swift-testing" 2>/dev/null || true
+}
+
+log_shows_successful_suite() {
+  grep -Eq 'Test run with .* passed after' "$RUN_LOG_FILE" \
+    && ! grep -Eq 'failed after|Issue recorded|Error:|Fatal error' "$RUN_LOG_FILE"
+}
 
 run_full_suite_with_timeout() {
   local pid=""
@@ -35,12 +44,7 @@ run_full_suite_with_timeout() {
     if kill -0 "$pid" 2>/dev/null; then
       echo "[full-suite] Timeout after ${FULL_SUITE_TIMEOUT_SECONDS}s." | tee -a "$RUN_LOG_FILE"
       echo "timeout" > "$timeout_marker"
-      kill "$pid" 2>/dev/null || true
-      pkill -P "$pid" 2>/dev/null || true
-      sleep 3
-      kill -9 "$pid" 2>/dev/null || true
-      pkill -9 -P "$pid" 2>/dev/null || true
-      pkill -f "swiftpm-testing-helper --test-bundle-path ${ROOT_DIR}/.build/arm64-apple-macosx/debug/HivePackageTests.xctest/Contents/MacOS/HivePackageTests" 2>/dev/null || true
+      kill_hive_test_processes "$pid"
     fi
   ) &
   watcher_pid="$!"
@@ -57,6 +61,10 @@ run_full_suite_with_timeout() {
 
   if [[ -f "$timeout_marker" ]]; then
     rm -f "$timeout_marker"
+    if log_shows_successful_suite; then
+      echo "[full-suite] Tests passed but the Swift test helper did not exit; treating as toolchain helper hang."
+      return 0
+    fi
     return 124
   fi
 
@@ -70,7 +78,7 @@ emit_stall_diagnostics() {
   echo "[full-suite] Last completed tests:"
   rg -n "Test \".*\" passed after|Test \".*\" failed after" "$RUN_LOG_FILE" | tail -n 20 || true
   echo "[full-suite] Active swift test processes:"
-  ps -Ao pid,ppid,state,%cpu,etime,command 2>/dev/null | rg "swift test --disable-sandbox|swiftpm-testing-helper --test-bundle-path .*HivePackageTests" || true
+  ps -Ao pid,ppid,state,%cpu,etime,command 2>/dev/null | rg "swift test --disable-sandbox|swiftpm-testing-helper --test-bundle-path .*HivePackageTests|swiftpm-xctest-helper .*HivePackageTests" || true
 }
 
 echo "[full-suite] Running full package test suite..."

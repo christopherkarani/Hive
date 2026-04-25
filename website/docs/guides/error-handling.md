@@ -17,7 +17,6 @@ The primary error type covering all runtime failures:
 | **Checkpoint** | `checkpointStoreMissing`, `checkpointVersionMismatch`, `checkpointDecodeFailed`, `checkpointEncodeFailed`, `checkpointCorrupt` |
 | **Fork** | `forkSourceCheckpointMissing`, `forkCheckpointStoreMissing`, `forkCheckpointQueryUnsupported`, `forkTargetThreadConflict`, `forkSchemaGraphMismatch`, `forkMalformedCheckpoint` |
 | **Interrupt/Resume** | `interruptPending`, `noCheckpointToResume`, `noInterruptToResume`, `resumeInterruptMismatch` |
-| **Model/Inference** | `modelClientMissing`, `modelStreamInvalid`, `toolRegistryMissing`, `modelToolLoopMaxModelInvocationsExceeded` |
 | **Bounds** | `stepIndexOutOfRange`, `taskOrdinalOutOfRange` |
 | **Config** | `invalidRunOptions` |
 | **Internal** | `internalInvariantViolation` |
@@ -29,8 +28,6 @@ The primary error type covering all runtime failures:
 **`scopeMismatch`** — Writing to a task-local channel from a global context, or vice versa. Verify channel scope matches usage.
 
 **`updatePolicyViolation`** — Writing to a `.single` update policy channel more than once per superstep. Use `.multi` for channels that receive multiple writes.
-
-**`modelClientMissing`** — Using `ModelTurn` without providing a model client in `HiveEnvironment`. Set the `model` field.
 
 **`noCheckpointToResume`** — Calling `resume()` without a saved checkpoint. Ensure checkpoint policy is enabled.
 
@@ -72,8 +69,6 @@ do {
     }
 } catch let error as HiveRuntimeError {
     switch error {
-    case .modelClientMissing:
-        // Handle missing model
     case .unknownChannelID(let id):
         // Handle unknown channel
     default:

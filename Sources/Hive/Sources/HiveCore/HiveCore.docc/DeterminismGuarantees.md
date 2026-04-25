@@ -36,9 +36,9 @@ This means that replaying the same workflow produces the same IDs, enabling chec
 
 All writes from a superstep apply together in a single atomic commit. No node ever sees a partially committed state — it reads the full pre-commit snapshot from the previous step.
 
-## Deterministic token streaming
+## Deterministic stream buffering
 
-When `deterministicTokenStreaming` is enabled in ``HiveRunOptions``, model tokens are buffered per-task and replayed in ordinal order. This ensures that even with concurrent LLM calls, the event stream is deterministic.
+When `deterministicStreamBuffering` is enabled in ``HiveRunOptions``, custom stream events are buffered per-task and replayed in ordinal order. This ensures that even with concurrent nodes, the event stream is deterministic.
 
 ## Golden testing
 

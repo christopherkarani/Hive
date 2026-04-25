@@ -1,9 +1,5 @@
 # Hive
 
-Umbrella module that re-exports `HiveCore`, `HiveDSL`, `HiveConduit`, and `HiveCheckpointWax`.
+Umbrella module that re-exports `HiveCore`.
 
-Use `import Hive` when you want the core runtime plus the DSL and Conduit/Wax adapters in one import.
-
-Optional modules:
-- `HiveRAGWax` for Wax RAG primitives.
-- `HiveMacros` for schema/channel macros.
+Use `import Hive` when you want the deterministic graph runtime API through a single package product.

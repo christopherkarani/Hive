@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -327,7 +326,7 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
     guard case let .writeApplied(_, payloadHash) = debugOn.kind else { #expect(Bool(false)); return }
 
     let expectedBytes = withUnsafeBytes(of: Int64(42).bigEndian) { Data($0) }
-    let expectedHash = SHA256.hash(data: expectedBytes).compactMap { String(format: "%02x", $0) }.joined()
+    let expectedHash = HiveSHA256.hash(data: expectedBytes).compactMap { String(format: "%02x", $0) }.joined()
     #expect(payloadHash == expectedHash)
 
     #expect(debugOn.metadata["valueTypeID"] == String(reflecting: Int.self))
@@ -336,25 +335,21 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
     #expect(debugOn.metadata["payload"] == expectedBytes.base64EncodedString())
 }
 
-@Test("deterministicTokenStreaming buffers and orders stream events")
-func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
+@Test("deterministic stream buffering buffers and orders stream events")
+func testDeterministicStreamBuffering_BuffersStreamEvents() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { input in
-        input.emitStream(.modelInvocationStarted(model: "m"), [:])
-        input.emitStream(.modelToken(text: "A1"), [:])
-        input.emitStream(.modelToken(text: "A2"), [:])
-        input.emitStream(.modelInvocationFinished, [:])
+        input.emitStream(.customDebug(name: "A1"), [:])
+        input.emitStream(.customDebug(name: "A2"), [:])
         try await Task.sleep(nanoseconds: 50_000_000)
         return HiveNodeOutput(next: .end)
     }
     builder.addNode(HiveNodeID("B")) { input in
-        input.emitStream(.modelInvocationStarted(model: "m"), [:])
-        input.emitStream(.modelToken(text: "B1"), [:])
-        input.emitStream(.modelInvocationFinished, [:])
+        input.emitStream(.customDebug(name: "B1"), [:])
         try await Task.sleep(nanoseconds: 5_000_000)
         return HiveNodeOutput(next: .end)
     }
@@ -365,7 +360,7 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     let handle = await runtime.run(
         threadID: HiveThreadID("det-stream"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true)
+        options: HiveRunOptions(deterministicStreamBuffering: true)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
@@ -374,12 +369,8 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
 
     let step0 = events.filter { $0.id.stepIndex == 0 }
     let streamEvents = step0.filter { event in
-        switch event.kind {
-        case .modelInvocationStarted, .modelToken, .modelInvocationFinished, .toolInvocationStarted, .toolInvocationFinished, .customDebug:
-            return true
-        default:
-            return false
-        }
+        if case .customDebug = event.kind { return true }
+        return false
     }
 
     let ordinals = streamEvents.compactMap(\.id.taskOrdinal)
@@ -397,12 +388,8 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     #expect(firstTaskFinishedIndex != nil)
     if let firstTaskFinishedIndex {
         let lastStreamIndex = step0.lastIndex { event in
-            switch event.kind {
-            case .modelInvocationStarted, .modelToken, .modelInvocationFinished, .toolInvocationStarted, .toolInvocationFinished, .customDebug:
-                return true
-            default:
-                return false
-            }
+            if case .customDebug = event.kind { return true }
+            return false
         }
         #expect(lastStreamIndex != nil)
         if let lastStreamIndex {
@@ -411,27 +398,25 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     }
 }
 
-@Test("Backpressure coalesces and drops deterministically")
-func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws {
+@Test("Backpressure drops debug events deterministically")
+func testBackpressure_DebugEventsDropDeterministically() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { input in
-        input.emitStream(.modelToken(text: "A"), [:])
-        input.emitDebug("d", [:])
-        input.emitStream(.modelToken(text: "B"), [:])
-        input.emitStream(.modelToken(text: "C"), [:]) // coalesce into "BC"
-        input.emitDebug("d2", [:]) // drop
+        input.emitDebug("a0", [:])
+        input.emitDebug("a1", [:])
+        input.emitDebug("a2", [:])
+        input.emitDebug("a3", [:]) // drop
         return HiveNodeOutput(next: .end)
     }
     builder.addNode(HiveNodeID("B")) { input in
-        input.emitStream(.modelToken(text: "X"), [:])
-        input.emitStream(.modelToken(text: "Y"), [:])
-        input.emitDebug("d0", [:])
-        input.emitStream(.modelToken(text: "Z"), [:]) // drop
-        input.emitDebug("d1", [:]) // drop
+        input.emitDebug("b0", [:])
+        input.emitDebug("b1", [:])
+        input.emitDebug("b2", [:])
+        input.emitDebug("b3", [:]) // drop
         return HiveNodeOutput(next: .end)
     }
 
@@ -441,7 +426,7 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
     let handle = await runtime.run(
         threadID: HiveThreadID("backpressure"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true, eventBufferCapacity: 3)
+        options: HiveRunOptions(deterministicStreamBuffering: true, eventBufferCapacity: 3)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
@@ -449,13 +434,12 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
     let events = await eventsTask.value
 
     let step0 = events.filter { $0.id.stepIndex == 0 }
-    let backpressureEvents = step0.compactMap { event -> (Int, Int)? in
-        guard case let .streamBackpressure(droppedModelTokenEvents, droppedDebugEvents) = event.kind else { return nil }
-        return (droppedModelTokenEvents, droppedDebugEvents)
+    let backpressureEvents = step0.compactMap { event -> Int? in
+        guard case let .streamBackpressure(droppedDebugEvents) = event.kind else { return nil }
+        return droppedDebugEvents
     }
     #expect(backpressureEvents.count == 1)
-    #expect(backpressureEvents.first?.0 == 1)
-    #expect(backpressureEvents.first?.1 == 2)
+    #expect(backpressureEvents.first == 2)
 
     if let backpressureIndex = step0.firstIndex(where: { if case .streamBackpressure = $0.kind { return true }; return false }),
        let stepFinishedIndex = step0.firstIndex(where: { if case .stepFinished = $0.kind { return true }; return false })
@@ -465,17 +449,12 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
         #expect(Bool(false))
     }
 
-    let tokenTexts = step0.compactMap { event -> (Int?, String)? in
-        guard case let .modelToken(text) = event.kind else { return nil }
-        return (event.id.taskOrdinal, text)
-    }
-    #expect(tokenTexts.contains { $0.0 == 0 && $0.1.contains("BC") })
-    #expect(tokenTexts.contains { $0.0 == 1 && $0.1 == "Z" } == false)
-    #expect(step0.contains { if case .customDebug(name: "d1") = $0.kind { return true }; return false } == false)
+    #expect(step0.contains { if case .customDebug(name: "a3") = $0.kind { return true }; return false } == false)
+    #expect(step0.contains { if case .customDebug(name: "b3") = $0.kind { return true }; return false } == false)
 }
 
-@Test("deterministicTokenStreaming discards failed-attempt stream buffers")
-func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async throws {
+@Test("deterministic stream buffering discards failed-attempt stream buffers")
+func testDeterministicStreamBuffering_DiscardsFailedAttemptStreamBuffers() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
@@ -499,10 +478,10 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
         retryPolicy: .exponentialBackoff(initialNanoseconds: 0, factor: 1, maxAttempts: 2, maxNanoseconds: 0)
     ) { input in
         if attempts.next() == 1 {
-            input.emitStream(.modelToken(text: "attempt1"), [:])
+            input.emitStream(.customDebug(name: "attempt1"), [:])
             throw HiveRuntimeError.invalidRunOptions("fail once")
         }
-        input.emitStream(.modelToken(text: "attempt2"), [:])
+        input.emitStream(.customDebug(name: "attempt2"), [:])
         return HiveNodeOutput(next: .end)
     }
 
@@ -512,19 +491,19 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
     let handle = await runtime.run(
         threadID: HiveThreadID("retry-stream"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true)
+        options: HiveRunOptions(deterministicStreamBuffering: true)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
     _ = try await handle.outcome.value
     let events = await eventsTask.value
 
-    let tokenTexts = events.compactMap { event -> String? in
-        guard case let .modelToken(text) = event.kind else { return nil }
-        return text
+    let debugNames = events.compactMap { event -> String? in
+        guard case let .customDebug(name) = event.kind else { return nil }
+        return name
     }
-    #expect(tokenTexts.contains("attempt1") == false)
-    #expect(tokenTexts.contains("attempt2"))
+    #expect(debugNames.contains("attempt1") == false)
+    #expect(debugNames.contains("attempt2"))
 
     let startedCount = events.filter { if case .taskStarted = $0.kind { return true }; return false }.count
     let finishedCount = events.filter { if case .taskFinished = $0.kind { return true }; return false }.count

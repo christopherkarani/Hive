@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -124,7 +123,7 @@ private func collectEventsAndError(_ stream: AsyncThrowingStream<HiveEvent, Erro
 }
 
 private func sha256HexLower(_ data: Data) -> String {
-    let hash = SHA256.hash(data: data)
+    let hash = HiveSHA256.hash(data: data)
     return hash.compactMap { String(format: "%02x", $0) }.joined()
 }
 

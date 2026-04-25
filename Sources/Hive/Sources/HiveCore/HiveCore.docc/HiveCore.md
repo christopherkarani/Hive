@@ -1,6 +1,6 @@
 # ``HiveCore``
 
-Zero-dependency core runtime for deterministic agent workflow execution.
+Core runtime for deterministic graph execution.
 
 @Metadata {
     @DisplayName("HiveCore")
@@ -8,9 +8,7 @@ Zero-dependency core runtime for deterministic agent workflow execution.
 
 ## Overview
 
-HiveCore provides the schema system, graph compiler, store model, and superstep runtime that power Hive's deterministic workflow execution. It has zero external dependencies — pure Swift built on actors and structured concurrency.
-
-HiveCore is organized into focused subsystems:
+HiveCore provides the schema system, graph compiler, store model, checkpoint protocols, and superstep runtime that power Hive's deterministic graph execution.
 
 | Subsystem | Responsibility |
 |-----------|---------------|
@@ -19,8 +17,6 @@ HiveCore is organized into focused subsystems:
 | Graph | Graph builder, compile, validation, versioning, Mermaid export |
 | Runtime | Superstep execution, frontier computation, event streaming, interrupts, retry |
 | Checkpointing | Checkpoint format, store protocol, policies |
-| Hybrid Inference | Model client, ReAct loop, tool registry, streaming |
-| Memory | Memory store protocol, in-memory implementation |
 
 ## Topics
 
@@ -91,27 +87,6 @@ HiveCore is organized into focused subsystems:
 - ``HiveInterrupt``
 - ``HiveResume``
 - ``HiveInterruption``
-
-### Hybrid Inference
-
-- <doc:HybridInference>
-- ``HiveModelClient``
-- ``HiveChatRequest``
-- ``HiveChatResponse``
-- ``HiveChatMessage``
-- ``HiveChatRole``
-- ``HiveChatStreamChunk``
-- ``HiveToolDefinition``
-- ``HiveToolCall``
-- ``HiveToolResult``
-- ``HiveToolRegistry``
-- ``HiveModelToolLoop``
-
-### Memory
-
-- ``HiveMemoryStore``
-- ``HiveMemoryItem``
-- ``InMemoryHiveMemoryStore``
 
 ### Errors
 

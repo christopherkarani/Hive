@@ -226,7 +226,7 @@ func validateRunOptionsReportsTypedFailFastErrors() async throws {
 
     do {
         try await runtime.validateRunOptions(
-            HiveRunOptions(deterministicTokenStreaming: true, streamingMode: .combined)
+            HiveRunOptions(deterministicStreamBuffering: true, streamingMode: .combined)
         )
         #expect(Bool(false))
     } catch let error as HiveRunOptionsValidationError {

@@ -71,10 +71,6 @@ public struct HiveRunContext<Schema: HiveSchema>: Sendable {
 public typealias NodeAction<Schema: HiveSchema> =
     @Sendable (HiveNodeInput<Schema>) async throws -> HiveNodeOutput<Schema>
 
-/// Deprecated: Use `NodeAction` instead.
-@available(*, deprecated, renamed: "NodeAction")
-public typealias HiveNode<Schema: HiveSchema> = NodeAction<Schema>
-
 /// Inputs passed to a node execution.
 public struct HiveNodeInput<Schema: HiveSchema>: Sendable {
     public let store: HiveStoreView<Schema>
@@ -103,11 +99,6 @@ public struct HiveNodeInput<Schema: HiveSchema>: Sendable {
 
 /// Stream-only event kinds emitted by nodes.
 public enum HiveStreamEventKind: Sendable {
-    case modelInvocationStarted(model: String)
-    case modelToken(text: String)
-    case modelInvocationFinished
-    case toolInvocationStarted(name: String)
-    case toolInvocationFinished(name: String, success: Bool)
     case customDebug(name: String)
 }
 

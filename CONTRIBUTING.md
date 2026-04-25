@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Hive! This document provides guid
 ### Requirements
 
 - Swift 6.2 or later
-- macOS 26+ or iOS 26+ (for development)
+- macOS 26+ or Linux (for core runtime development)
 - Xcode 16+ (optional, for IDE support)
 
 ### Building
@@ -33,13 +33,9 @@ If you encounter intermittent test runner hangs, use the stable runner:
 ```
 Sources/Hive/
 ├── Sources/
-│   ├── HiveCore/          # Zero-dependency core (schema, graph, runtime, store)
-│   ├── HiveDSL/           # Result-builder workflow DSL
-│   ├── HiveConduit/       # LLM adapter integration
-│   ├── HiveCheckpointWax/ # Persistent checkpoint storage
-│   ├── HiveRAGWax/        # Vector RAG storage
-│   └── Hive/              # Umbrella module
-├── Tests/                 # Test suites for each module
+│   ├── HiveCore/          # Schema, graph, runtime, store, checkpoint protocols
+│   └── Hive/              # Umbrella module that re-exports HiveCore
+├── Tests/                 # Core and umbrella tests
 └── Examples/              # Example executables
 ```
 
