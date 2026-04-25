@@ -98,9 +98,6 @@ let environment = HiveEnvironment<DemoSchema>(
     context: (),
     clock: appClock,
     logger: appLogger,
-    model: nil,
-    modelRouter: nil,
-    tools: nil,
     checkpointStore: nil
 )
 
@@ -181,13 +178,11 @@ for try await event in views.steps() {
 }
 ```
 
-Chat UI (model tokens):
+Debug stream:
 ```swift
 let views = HiveEventStreamViews(handle.events)
-for try await event in views.model() {
-    if case .token(let text) = event.kind {
-        // Append text to the UI incrementally.
-    }
+for try await event in views.debug() {
+    // event.kind: .customDebug(name:) or .streamBackpressure(droppedDebugEvents:)
 }
 ```
 

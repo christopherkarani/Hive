@@ -33,10 +33,10 @@ const features = [
       'SpawnEach dispatches parallel workers with task-local state. Join barriers synchronize them. Deterministic merge on completion.',
   },
   {
-    icon: '&#x1F916;',
-    title: 'Hybrid Inference',
+    icon: '&#x1F4BE;',
+    title: 'Core Checkpointing',
     description:
-      'Bounded ReAct agent loops with tool calling and streaming tokens. Route between on-device and cloud models seamlessly.',
+      'Checkpoint protocols and in-memory runtime stores stay in core. External persistence adapters live outside this package.',
   },
 ];
 

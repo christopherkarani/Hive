@@ -24,7 +24,7 @@ public struct HiveRunOptions: Sendable {
     public let maxConcurrentTasks: Int
     public let checkpointPolicy: HiveCheckpointPolicy
     public let debugPayloads: Bool
-    public let deterministicTokenStreaming: Bool
+    public let deterministicStreamBuffering: Bool
     public let eventBufferCapacity: Int
     public let outputProjectionOverride: HiveOutputProjection?
     public let streamingMode: HiveStreamingMode
@@ -34,7 +34,7 @@ public struct HiveRunOptions: Sendable {
         maxConcurrentTasks: Int = 8,
         checkpointPolicy: HiveCheckpointPolicy = .disabled,
         debugPayloads: Bool = false,
-        deterministicTokenStreaming: Bool = false,
+        deterministicStreamBuffering: Bool = false,
         eventBufferCapacity: Int = 4096,
         outputProjectionOverride: HiveOutputProjection? = nil,
         streamingMode: HiveStreamingMode = .events
@@ -43,7 +43,7 @@ public struct HiveRunOptions: Sendable {
         self.maxConcurrentTasks = maxConcurrentTasks
         self.checkpointPolicy = checkpointPolicy
         self.debugPayloads = debugPayloads
-        self.deterministicTokenStreaming = deterministicTokenStreaming
+        self.deterministicStreamBuffering = deterministicStreamBuffering
         self.eventBufferCapacity = eventBufferCapacity
         self.outputProjectionOverride = outputProjectionOverride
         self.streamingMode = streamingMode

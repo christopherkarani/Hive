@@ -1,9 +1,5 @@
-import CryptoKit
 import Foundation
 import Synchronization
-
-@available(*, deprecated, renamed: "HiveRuntimeStateSnapshot")
-public typealias HiveStateSnapshot<Schema: HiveSchema> = HiveRuntimeStateSnapshot<Schema>
 
 // MARK: - HiveRuntime
 
@@ -66,7 +62,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             runID: runID,
             attemptID: attemptID,
             events: events,
-            outcome: outcome
+            outcome: outcome,
+            streamController: streamController
         )
     }
 
@@ -111,7 +108,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             _ = try? await outcome.value
         }
 
-        return HiveRunHandle(runID: runID, attemptID: attemptID, events: events, outcome: outcome)
+        return HiveRunHandle(
+            runID: runID,
+            attemptID: attemptID,
+            events: events,
+            outcome: outcome,
+            streamController: streamController
+        )
     }
 
     public func applyExternalWrites(
@@ -153,7 +156,13 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             _ = try? await outcome.value
         }
 
-        return HiveRunHandle(runID: runID, attemptID: attemptID, events: events, outcome: outcome)
+        return HiveRunHandle(
+            runID: runID,
+            attemptID: attemptID,
+            events: events,
+            outcome: outcome,
+            streamController: streamController
+        )
     }
 
     public func getCheckpointHistory(
@@ -579,7 +588,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         data.append(contentsOf: graph.schemaVersion.utf8)
         data.append(0)
         data.append(contentsOf: graph.graphVersion.utf8)
-        let lineageID = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        let lineageID = HiveSHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
 
         return HiveForkLineage(
             lineageID: lineageID,
@@ -648,7 +657,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             data.append(0)
             data.append(contentsOf: part.utf8)
         }
-        let digest = SHA256.hash(data: data)
+        let digest = HiveSHA256.hash(data: data)
         var bytes = Array(digest.prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
@@ -705,7 +714,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             runID: runID,
             attemptID: attemptID,
             events: events,
-            outcome: outcome
+            outcome: outcome,
+            streamController: streamController
         )
     }
 
@@ -1303,12 +1313,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     }
                 }
 
-                if stepOutcome.dropped.droppedModelTokenEvents > 0 || stepOutcome.dropped.droppedDebugEvents > 0 {
+                if stepOutcome.dropped.droppedDebugEvents > 0 {
                     emitter.emit(
-                        kind: .streamBackpressure(
-                            droppedModelTokenEvents: stepOutcome.dropped.droppedModelTokenEvents,
-                            droppedDebugEvents: stepOutcome.dropped.droppedDebugEvents
-                        ),
+                        kind: .streamBackpressure(droppedDebugEvents: stepOutcome.dropped.droppedDebugEvents),
                         stepIndex: state.stepIndex - 1,
                         taskOrdinal: nil
                     )
@@ -1568,9 +1575,9 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 reason: "steps must be >= 1"
             )
         }
-        if options.deterministicTokenStreaming, options.streamingMode != .events {
+        if options.deterministicStreamBuffering, options.streamingMode != .events {
             throw HiveRunOptionsValidationError.unsupportedCombination(
-                reason: "deterministicTokenStreaming is only supported when streamingMode == .events"
+                reason: "deterministicStreamBuffering is only supported when streamingMode == .events"
             )
         }
         switch options.checkpointPolicy {
@@ -1716,7 +1723,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         var bytes = Data()
         bytes.append(contentsOf: "HINT1".utf8)
         bytes.append(contentsOf: winningTaskID.rawValue.utf8)
-        let hash = SHA256.hash(data: bytes)
+        let hash = HiveSHA256.hash(data: bytes)
         let hex = hash.compactMap { String(format: "%02x", $0) }.joined()
         return HiveInterruptID(hex)
     }
@@ -1912,7 +1919,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         withUnsafeBytes(of: &uuid) { bytes.append(contentsOf: $0) }
         appendUInt32BE(stepValue, to: &bytes)
 
-        let hash = SHA256.hash(data: bytes)
+        let hash = HiveSHA256.hash(data: bytes)
         let hex = hash.compactMap { String(format: "%02x", $0) }.joined()
         return HiveCheckpointID(hex)
     }
@@ -2042,7 +2049,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         if Task.isCancelled || results.contains(where: { $0.error is RuntimeCancellation }) {
-            if options.deterministicTokenStreaming == false {
+            if options.deterministicStreamBuffering == false {
                 // Live stream events already emitted (if any). Ensure determinism for task failure surface.
             }
 
@@ -2061,9 +2068,8 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         }
 
         var dropped = droppedCounter.snapshot()
-        if options.deterministicTokenStreaming {
+        if options.deterministicStreamBuffering {
             for result in results {
-                dropped.droppedModelTokenEvents += result.streamDrops.droppedModelTokenEvents
                 dropped.droppedDebugEvents += result.streamDrops.droppedDebugEvents
             }
 
@@ -2509,7 +2515,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         droppedCounter: HiveDroppedEventCounter
     ) async -> TaskExecutionResult<Schema> {
         let bufferingCapacity = max(1, options.eventBufferCapacity)
-        let streamBuffer: HivePerAttemptStreamBuffer? = options.deterministicTokenStreaming
+        let streamBuffer: HivePerAttemptStreamBuffer? = options.deterministicStreamBuffering
             ? HivePerAttemptStreamBuffer(capacity: bufferingCapacity, stepIndex: stepIndex, taskOrdinal: task.ordinal)
             : nil
 
@@ -2574,7 +2580,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
             }
             return TaskExecutionResult(output: output, error: nil, streamEvents: nil, streamDrops: .init())
         } catch {
-            if options.deterministicTokenStreaming {
+            if options.deterministicStreamBuffering {
                 // Failed-attempt stream events are discarded in this mode.
                 return TaskExecutionResult(error: error)
             }
@@ -2674,7 +2680,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 break
             case .end:
                 continue
-            case .nodes(let nodes):
+            case .to(let nodes):
                 for node in nodes {
                     nextGraphSeeds.append(HiveTaskSeed(nodeID: node))
                 }
@@ -2702,7 +2708,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                     }
                 case .end:
                     break
-                case .nodes(let nodes):
+                case .to(let nodes):
                     for node in nodes {
                         nextGraphSeeds.append(HiveTaskSeed(nodeID: node))
                     }
@@ -2941,7 +2947,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         appendUInt32BE(ordinalValue, to: &bytes)
         bytes.append(localFingerprint)
 
-        let hash = SHA256.hash(data: bytes)
+        let hash = HiveSHA256.hash(data: bytes)
         let hex = hash.compactMap { String(format: "%02x", $0) }.joined()
         return HiveTaskID(hex)
     }
@@ -2950,7 +2956,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         let spec = try storeSupport.requireSpec(for: channelID)
         let value = try global.valueAny(for: channelID)
         let bytes = try canonicalBytes(for: value, spec: spec)
-        let hash = SHA256.hash(data: bytes)
+        let hash = HiveSHA256.hash(data: bytes)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 
@@ -2975,7 +2981,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
         } else {
             payloadBytes = Data(String(reflecting: type(of: interruption.payload)).utf8)
         }
-        let digest = SHA256.hash(data: payloadBytes)
+        let digest = HiveSHA256.hash(data: payloadBytes)
         let payloadHash = digest.compactMap { String(format: "%02x", $0) }.joined()
         return HiveRuntimeInterruptionSnapshot(
             interruptID: interruption.id,
@@ -2995,7 +3001,7 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
                 overlay: entry.seed.local,
                 debugPayloads: false
             )
-            let digest = SHA256.hash(data: fingerprint)
+            let digest = HiveSHA256.hash(data: fingerprint)
             let fingerprintHash = digest.compactMap { String(format: "%02x", $0) }.joined()
             summary.append(
                 HiveRuntimeFrontierSummary(
@@ -3100,16 +3106,6 @@ public actor HiveRuntime<Schema: HiveSchema>: Sendable {
 
     private static func mapStream(_ kind: HiveStreamEventKind) -> HiveEventKind {
         switch kind {
-        case .modelInvocationStarted(let model):
-            return .modelInvocationStarted(model: model)
-        case .modelToken(let text):
-            return .modelToken(text: text)
-        case .modelInvocationFinished:
-            return .modelInvocationFinished
-        case .toolInvocationStarted(let name):
-            return .toolInvocationStarted(name: name)
-        case .toolInvocationFinished(let name, let success):
-            return .toolInvocationFinished(name: name, success: success)
         case .customDebug(let name):
             return .customDebug(name: name)
         }
@@ -3167,16 +3163,13 @@ private struct StepOutcome<Schema: HiveSchema>: Sendable {
 }
 
 private struct HiveDroppedEventCounts: Sendable {
-    var droppedModelTokenEvents: Int = 0
     var droppedDebugEvents: Int = 0
 
     mutating func record(_ enqueueResult: HiveEventEnqueueResult) {
         switch enqueueResult {
-        case .droppedModelToken:
-            droppedModelTokenEvents += 1
         case .droppedDebug:
             droppedDebugEvents += 1
-        case .enqueued, .coalescedModelToken, .terminated:
+        case .enqueued, .terminated:
             break
         }
     }
@@ -3231,20 +3224,10 @@ private final class HivePerAttemptStreamBuffer: Sendable {
             }
 
             switch kind {
-            case .modelToken(let text):
-                if let last = state.events.last, case let .modelToken(existing) = last.kind {
-                    state.events[state.events.count - 1] = BufferedStreamEvent(
-                        kind: .modelToken(text: existing + text),
-                        metadata: last.metadata,
-                        taskOrdinal: taskOrdinal
-                    )
-                } else {
-                    state.dropped.droppedModelTokenEvents += 1
-                }
             case .customDebug:
                 state.dropped.droppedDebugEvents += 1
             default:
-                state.overflowError = HiveRuntimeError.modelStreamInvalid(
+                state.overflowError = HiveRuntimeError.internalInvariantViolation(
                     "Non-droppable stream event buffer overflow (stepIndex=\(stepIndex), taskOrdinal=\(taskOrdinal), perTaskCapacity=\(capacity))"
                 )
             }

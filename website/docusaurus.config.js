@@ -4,7 +4,7 @@ const { themes: prismThemes } = require('prism-react-renderer');
 /** @type {import('@docusaurus/types').Config} */
 const config = {
   title: 'Hive',
-  tagline: 'LangGraph for Swift. Deterministic agent workflows with byte-identical output on every run.',
+  tagline: 'Deterministic graph runtime for Swift.',
   favicon: 'img/favicon.ico',
 
   url: 'https://christopherkarani.github.io',
@@ -79,7 +79,7 @@ const config = {
             items: [
               { label: 'Getting Started', to: '/docs/intro' },
               { label: 'Architecture', to: '/docs/architecture' },
-              { label: 'DSL Overview', to: '/docs/dsl/overview' },
+              { label: 'Runtime', to: '/docs/core/runtime' },
             ],
           },
           {
@@ -87,7 +87,6 @@ const config = {
             items: [
               { label: 'Hive', href: 'https://christopherkarani.github.io/Hive/api/' },
               { label: 'HiveCore', href: 'https://christopherkarani.github.io/Hive/api/hivecore/' },
-              { label: 'HiveDSL', href: 'https://christopherkarani.github.io/Hive/api/hivedsl/' },
             ],
           },
           {

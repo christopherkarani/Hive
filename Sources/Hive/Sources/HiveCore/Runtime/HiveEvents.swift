@@ -104,13 +104,6 @@ public enum HiveEventKind: Sendable {
     case storeSnapshot(channelValues: [HiveSnapshotValue])
     case channelUpdates(channelValues: [HiveSnapshotValue])
 
-    case modelInvocationStarted(model: String)
-    case modelToken(text: String)
-    case modelInvocationFinished
-
-    case toolInvocationStarted(name: String)
-    case toolInvocationFinished(name: String, success: Bool)
-
-    case streamBackpressure(droppedModelTokenEvents: Int, droppedDebugEvents: Int)
+    case streamBackpressure(droppedDebugEvents: Int)
     case customDebug(name: String)
 }

@@ -84,6 +84,8 @@ private func collectDeterminismEvents(
     return events
 }
 
+@Suite("HiveRuntimeDeterminismSoak", .serialized)
+struct HiveRuntimeDeterminismSoakTests {
 @Test("Determinism soak: seeded interrupt/resume + external writes + cancellation produce stable hashes")
 func determinismSoakSeededSwarmWorkloadProducesStableHashes() async throws {
     enum Schema: HiveSchema {
@@ -243,6 +245,7 @@ func determinismSoakSeededSwarmWorkloadProducesStableHashes() async throws {
         print("determinism.stateHash=\(stateHash)")
     }
 }
+}
 
 private struct IntCodec: HiveCodec {
     let id: String
@@ -253,7 +256,9 @@ private struct IntCodec: HiveCodec {
 
     func decode(_ data: Data) throws -> Int {
         guard data.count == MemoryLayout<Int>.size else { return 0 }
-        return data.withUnsafeBytes { $0.load(as: Int.self) }.bigEndian
+        var raw = Int.zero
+        _ = withUnsafeMutableBytes(of: &raw) { data.copyBytes(to: $0) }
+        return Int(bigEndian: raw)
     }
 }
 

@@ -68,7 +68,7 @@ public struct HiveRunContext<Schema: HiveSchema>: Sendable {
 }
 
 /// Node execution closure.
-public typealias HiveNode<Schema: HiveSchema> =
+public typealias NodeAction<Schema: HiveSchema> =
     @Sendable (HiveNodeInput<Schema>) async throws -> HiveNodeOutput<Schema>
 
 /// Inputs passed to a node execution.
@@ -99,11 +99,6 @@ public struct HiveNodeInput<Schema: HiveSchema>: Sendable {
 
 /// Stream-only event kinds emitted by nodes.
 public enum HiveStreamEventKind: Sendable {
-    case modelInvocationStarted(model: String)
-    case modelToken(text: String)
-    case modelInvocationFinished
-    case toolInvocationStarted(name: String)
-    case toolInvocationFinished(name: String, success: Bool)
     case customDebug(name: String)
 }
 
@@ -111,13 +106,13 @@ public enum HiveStreamEventKind: Sendable {
 public struct HiveNodeOutput<Schema: HiveSchema>: Sendable {
     public var writes: [AnyHiveWrite<Schema>]
     public var spawn: [HiveTaskSeed<Schema>]
-    public var next: HiveNext
+    public var next: Route
     public var interrupt: HiveInterruptRequest<Schema>?
 
     public init(
         writes: [AnyHiveWrite<Schema>] = [],
         spawn: [HiveTaskSeed<Schema>] = [],
-        next: HiveNext = .useGraphEdges,
+        next: Route = .useGraphEdges,
         interrupt: HiveInterruptRequest<Schema>? = nil
     ) {
         self.writes = writes

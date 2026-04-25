@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -115,7 +114,7 @@ private func drainEvents(_ stream: AsyncThrowingStream<HiveEvent, Error>) async 
 }
 
 private func sha256Hex(_ data: Data) -> String {
-    let digest = SHA256.hash(data: data)
+    let digest = HiveSHA256.hash(data: data)
     return digest.compactMap { String(format: "%02x", $0) }.joined()
 }
 
@@ -217,7 +216,7 @@ private func makeInterruptGraph() throws -> CompiledHiveGraph<ForkBaseSchema> {
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(ForkBaseSchema.Channels.notes, ["A-interrupt"])],
-            next: .nodes([HiveNodeID("B")]),
+            next: .to([HiveNodeID("B")]),
             interrupt: HiveInterruptRequest(payload: "approve")
         )
     }
@@ -251,6 +250,8 @@ private func seedCheckpointForSource(
     return checkpoint.id
 }
 
+@Suite("HiveRuntimeForkNative", .serialized)
+struct HiveRuntimeForkNativeTests {
 @Test("fork from latest checkpoint clones thread state")
 func testFork_FromLatestCheckpoint() async throws {
     let store = ForkQueryableStore<ForkBaseSchema>()
@@ -799,4 +800,5 @@ func testFork_DeterminismRepeatedRuns() async throws {
 
     #expect(Set(transcriptHashes).count == 1)
     #expect(Set(finalStateHashes).count == 1)
+}
 }

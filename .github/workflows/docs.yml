@@ -54,13 +54,6 @@ jobs:
             --hosting-base-path Hive/api/hivecore \
             --output-path docc-out/hivecore
 
-          swift package generate-documentation \
-            --target HiveDSL \
-            --disable-indexing \
-            --transform-for-static-hosting \
-            --hosting-base-path Hive/api/hivedsl \
-            --output-path docc-out/hivedsl
-
       - name: Merge DocC into Docusaurus build
         run: |
           mkdir -p website/build/api

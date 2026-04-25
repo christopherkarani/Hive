@@ -58,5 +58,3 @@ Checkpoint IDs are computed as SHA-256 of `"HCP1" + runID + stepIndex`, ensuring
 ## Persistence
 
 Channels with `.checkpointed` persistence are included in checkpoint snapshots. Channels with `.untracked` or `.ephemeral` persistence are excluded.
-
-See [HiveCheckpointWax](/docs/ecosystem/adapters#hivecheckpointwax) for the Wax-backed persistent implementation.

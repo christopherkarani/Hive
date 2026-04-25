@@ -97,6 +97,8 @@ private func collectSwarmEventsAndError(
     }
 }
 
+@Suite("HiveRuntimeSwarmContract", .serialized)
+struct HiveRuntimeSwarmContractTests {
 @Test("getState returns deterministic typed runtime snapshot")
 func getStateReturnsDeterministicTypedSnapshot() async throws {
     enum Schema: HiveSchema {
@@ -224,7 +226,7 @@ func validateRunOptionsReportsTypedFailFastErrors() async throws {
 
     do {
         try await runtime.validateRunOptions(
-            HiveRunOptions(deterministicTokenStreaming: true, streamingMode: .combined)
+            HiveRunOptions(deterministicStreamBuffering: true, streamingMode: .combined)
         )
         #expect(Bool(false))
     } catch let error as HiveRunOptionsValidationError {
@@ -448,4 +450,5 @@ func externalWritesRejectInvalidBatchesAtomically() async throws {
 
     let state = try #require(try await runtime.getState(threadID: HiveThreadID("ext-atomic")))
     #expect(try state.store.get(validKey) == 0)
+}
 }

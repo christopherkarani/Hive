@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -68,7 +67,7 @@ private actor TestCheckpointStore<Schema: HiveSchema>: HiveCheckpointStore {
 
 // MARK: - Streaming Mode Tests
 
-@Suite("HiveRuntimeStreamingModes")
+@Suite("HiveRuntimeStreamingModes", .serialized)
 struct HiveRuntimeStreamingModeTests {
 
     // MARK: - Shared Schema
@@ -96,7 +95,7 @@ struct HiveRuntimeStreamingModeTests {
         builder.addNode(HiveNodeID("A")) { _ in
             HiveNodeOutput(
                 writes: [AnyHiveWrite(messagesKey, 10)],
-                next: .nodes([HiveNodeID("B")])
+                next: .to([HiveNodeID("B")])
             )
         }
         builder.addNode(HiveNodeID("B")) { _ in

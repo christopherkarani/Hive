@@ -4,38 +4,38 @@ const rows = [
   {
     feature: 'Deterministic execution',
     hive: 'Superstep ordering by node ID. Identical traces every run.',
-    langgraph: 'Depends on implementation. No structural guarantee.',
+    langgraph: 'Usually runtime-dependent ordering.',
     scratch: 'You build and maintain it yourself.',
   },
   {
     feature: 'Type safety',
     hive: 'HiveSchema with typed channels, reducers, codecs.',
-    langgraph: 'Runtime dicts. Errors at execution time.',
+    langgraph: 'Often dictionary-based state.',
     scratch: 'Whatever you enforce manually.',
   },
   {
     feature: 'Concurrency model',
     hive: 'Swift actors + Sendable. Data races are compile errors.',
-    langgraph: 'GIL + threads. Race conditions are runtime surprises.',
-    scratch: 'Hope and prayer.',
+    langgraph: 'Depends on the host runtime.',
+    scratch: 'You own scheduling and isolation.',
   },
   {
     feature: 'Interrupt / Resume',
     hive: 'Typed payloads. Checkpoint includes frontier + join barriers + store.',
-    langgraph: 'Checkpoint support varies.',
+    langgraph: 'Support depends on the framework and adapter.',
     scratch: 'Significant custom work.',
   },
   {
     feature: 'Fan-out / Join',
     hive: 'SpawnEach + Join with bitset barriers. Deterministic merge.',
     langgraph: 'Possible but manual wiring.',
-    scratch: 'Graph theory homework.',
+    scratch: 'You implement barriers yourself.',
   },
   {
-    feature: 'On-device inference',
-    hive: 'Native support. Route between on-device and cloud models.',
-    langgraph: 'Python-only. No on-device story.',
-    scratch: 'Depends on your stack.',
+    feature: 'Runtime surface',
+    hive: 'Core graph primitives only. No DSL, model, tool, or RAG APIs.',
+    langgraph: 'Often combines runtime and higher-level orchestration.',
+    scratch: 'You decide every boundary.',
   },
   {
     feature: 'Golden testing',
@@ -53,7 +53,7 @@ export default function ComparisonTable() {
           <tr>
             <th></th>
             <th>Hive</th>
-            <th>LangGraph (Python)</th>
+            <th>Other graph frameworks</th>
             <th>Building from scratch</th>
           </tr>
         </thead>

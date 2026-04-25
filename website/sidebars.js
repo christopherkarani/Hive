@@ -16,31 +16,11 @@ const sidebars = {
     },
     {
       type: 'category',
-      label: 'DSL',
-      collapsed: false,
-      items: [
-        'dsl/overview',
-        'dsl/model-turn',
-        'dsl/patching',
-      ],
-    },
-    {
-      type: 'category',
       label: 'Features',
       collapsed: false,
       items: [
         'features/checkpointing',
         'features/interrupt-resume',
-        'features/hybrid-inference',
-        'features/memory',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Ecosystem',
-      items: [
-        'ecosystem/adapters',
-        'ecosystem/data-structures',
       ],
     },
     {

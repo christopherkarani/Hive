@@ -55,32 +55,9 @@ public struct HiveCheckpointEvent: Sendable, Equatable {
     public let kind: Kind
 }
 
-public struct HiveModelEvent: Sendable, Equatable {
-    public enum Kind: Sendable, Equatable {
-        case started(model: String)
-        case token(text: String)
-        case finished
-    }
-
-    public let id: HiveEventID
-    public let metadata: [String: String]
-    public let kind: Kind
-}
-
-public struct HiveToolEvent: Sendable, Equatable {
-    public enum Kind: Sendable, Equatable {
-        case started(name: String)
-        case finished(name: String, success: Bool)
-    }
-
-    public let id: HiveEventID
-    public let metadata: [String: String]
-    public let kind: Kind
-}
-
 public struct HiveDebugEvent: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
-        case streamBackpressure(droppedModelTokenEvents: Int, droppedDebugEvents: Int)
+        case streamBackpressure(droppedDebugEvents: Int)
         case customDebug(name: String)
     }
 
@@ -175,45 +152,14 @@ public struct HiveEventStreamViews: Sendable {
         }
     }
 
-    public func model() -> AsyncThrowingStream<HiveModelEvent, Error> {
-        makeViewStream { event in
-            switch event.kind {
-            case .modelInvocationStarted(let model):
-                return HiveModelEvent(id: event.id, metadata: event.metadata, kind: .started(model: model))
-            case .modelToken(let text):
-                return HiveModelEvent(id: event.id, metadata: event.metadata, kind: .token(text: text))
-            case .modelInvocationFinished:
-                return HiveModelEvent(id: event.id, metadata: event.metadata, kind: .finished)
-            default:
-                return nil
-            }
-        }
-    }
-
-    public func tools() -> AsyncThrowingStream<HiveToolEvent, Error> {
-        makeViewStream { event in
-            switch event.kind {
-            case .toolInvocationStarted(let name):
-                return HiveToolEvent(id: event.id, metadata: event.metadata, kind: .started(name: name))
-            case .toolInvocationFinished(let name, let success):
-                return HiveToolEvent(id: event.id, metadata: event.metadata, kind: .finished(name: name, success: success))
-            default:
-                return nil
-            }
-        }
-    }
-
     public func debug() -> AsyncThrowingStream<HiveDebugEvent, Error> {
         makeViewStream { event in
             switch event.kind {
-            case .streamBackpressure(let droppedModelTokenEvents, let droppedDebugEvents):
+            case .streamBackpressure(let droppedDebugEvents):
                 return HiveDebugEvent(
                     id: event.id,
                     metadata: event.metadata,
-                    kind: .streamBackpressure(
-                        droppedModelTokenEvents: droppedModelTokenEvents,
-                        droppedDebugEvents: droppedDebugEvents
-                    )
+                    kind: .streamBackpressure(droppedDebugEvents: droppedDebugEvents)
                 )
             case .customDebug(let name):
                 return HiveDebugEvent(id: event.id, metadata: event.metadata, kind: .customDebug(name: name))
@@ -268,6 +214,10 @@ actor HiveEventStreamViewsHub {
         self.source = source
     }
 
+    deinit {
+        pumpTask?.cancel()
+    }
+
     func addSubscriber(
         id: UUID,
         onEvent: @escaping (HiveEvent) -> Void,
@@ -288,16 +238,26 @@ actor HiveEventStreamViewsHub {
 
     private func startPumpIfNeeded() {
         guard pumpTask == nil else { return }
-        pumpTask = Task.detached { [source] in
+        pumpTask = Task(priority: .userInitiated) { [weak self, source] in
             do {
                 for try await event in source {
+                    guard let self else { return }
                     await self.broadcast(event)
                 }
+                guard let self else { return }
                 await self.finishAll(.success(()))
+            } catch is CancellationError {
+                guard let self else { return }
+                await self.clearPumpTask()
             } catch {
+                guard let self else { return }
                 await self.finishAll(.failure(error))
             }
         }
+    }
+
+    private func clearPumpTask() {
+        pumpTask = nil
     }
 
     private func broadcast(_ event: HiveEvent) {

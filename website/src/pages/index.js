@@ -10,61 +10,93 @@ import styles from './index.module.css';
 
 const codeExamples = [
   {
-    label: 'Agent Loop',
-    code: `Workflow<Schema> {
-    ModelTurn("chat", model: "claude-sonnet-4-5-20250929", messages: [
-        HiveChatMessage(id: "u1", role: .user, content: "Weather in SF?")
-    ])
-    .tools(.environment)
-    .agentLoop()
-    .writes(to: Schema.answer)
-    .start()
-}`,
+    label: 'Static Edge',
+    code: `var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("load")])
+
+builder.addNode(HiveNodeID("load")) { input in
+        let text = try input.store.get(Schema.input)
+        return HiveNodeOutput(
+            writes: [AnyHiveWrite(Schema.normalized, text.lowercased())],
+            next: .useGraphEdges
+        )
+    }
+
+builder.addNode(HiveNodeID("rank")) { input in
+        let text = try input.store.get(Schema.normalized)
+        return HiveNodeOutput(
+            writes: [AnyHiveWrite(Schema.score, score(text))],
+            next: .end
+        )
+    }
+
+builder.addEdge(from: HiveNodeID("load"), to: HiveNodeID("rank"))
+let graph = try builder.compile()`,
   },
   {
     label: 'Branching',
-    code: `Workflow<Schema> {
-    Node("classify") { input in
+    code: `var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("classify")])
+
+builder.addNode(HiveNodeID("classify")) { input in
         let text = try input.store.get(Schema.text)
-        Effects { Set(Schema.category, classify(text)); UseGraphEdges() }
-    }.start()
-
-    Node("respond")  { _ in Effects { End() } }
-    Node("escalate") { _ in Effects { End() } }
-
-    Branch(from: "classify") {
-        Branch.case(name: "urgent", when: {
-            (try? $0.get(Schema.category)) == "urgent"
-        }) { GoTo("escalate") }
-        Branch.default { GoTo("respond") }
+        return HiveNodeOutput(
+            writes: [AnyHiveWrite(Schema.category, classify(text))],
+            next: .useGraphEdges
+        )
     }
-}`,
+
+builder.addRouter(from: HiveNodeID("classify")) { store in
+    switch try store.get(Schema.category) {
+    case "urgent": return .to([HiveNodeID("escalate")])
+    default: return .to([HiveNodeID("respond")])
+    }
+}
+
+builder.addNode(HiveNodeID("respond"))  { _ in HiveNodeOutput(next: .end) }
+builder.addNode(HiveNodeID("escalate")) { _ in HiveNodeOutput(next: .end) }
+let graph = try builder.compile()`,
   },
   {
     label: 'Fan-Out + Join + Interrupt',
-    code: `Workflow<Schema> {
-    Node("dispatch") { _ in
-        Effects {
-            SpawnEach(["a", "b", "c"], node: "worker") { item in
-                var local = HiveTaskLocalStore<Schema>.empty
-                try local.set(Schema.item, item)
-                return local
-            }
-            End()
-        }
-    }.start()
+    code: `var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("dispatch")])
 
-    Node("worker") { input in
-        let item = try input.store.get(Schema.item)
-        Effects { Append(Schema.results, elements: [item.uppercased()]); End() }
+builder.addNode(HiveNodeID("dispatch")) { _ in
+        let apple = try makeTaskLocal(item: "apple")
+        let banana = try makeTaskLocal(item: "banana")
+        HiveNodeOutput(
+            spawn: [
+                HiveTaskSeed(nodeID: HiveNodeID("workerA"), local: apple),
+                HiveTaskSeed(nodeID: HiveNodeID("workerB"), local: banana)
+            ],
+            next: .end
+        )
     }
 
-    Node("review") { _ in Effects { Interrupt("Approve results?") } }
-    Node("done")   { _ in Effects { End() } }
+builder.addNode(HiveNodeID("workerA")) { input in
+        let item = try input.store.get(Schema.item)
+        return HiveNodeOutput(
+            writes: [AnyHiveWrite(Schema.results, [item.uppercased()])],
+            next: .end
+        )
+    }
 
-    Join(parents: ["worker"], to: "review")
-    Edge("review", to: "done")
-}`,
+builder.addNode(HiveNodeID("workerB")) { input in
+    let item = try input.store.get(Schema.item)
+    return HiveNodeOutput(
+        writes: [AnyHiveWrite(Schema.results, [item.uppercased()])],
+        next: .end
+    )
+}
+
+builder.addNode(HiveNodeID("review")) { _ in
+    HiveNodeOutput(interrupt: HiveInterruptRequest(payload: "approve"))
+}
+
+builder.addJoinEdge(
+    parents: [HiveNodeID("workerA"), HiveNodeID("workerB")],
+    target: HiveNodeID("review")
+)
+
+let graph = try builder.compile()`,
   },
 ];
 
@@ -118,7 +150,7 @@ function CodeExamples() {
     <div className={clsx(styles.codeSection, 'container')}>
       <h2 className={styles.sectionTitle}>See It in Action</h2>
       <p className={styles.sectionSubtitle}>
-        Expressive DSL for complex agent workflows
+        Explicit graph builder APIs for deterministic runtime behavior
       </p>
       <div className={styles.tabList}>
         {codeExamples.map((example, idx) => (
@@ -142,8 +174,8 @@ export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   return (
     <Layout
-      title={`${siteConfig.title} — Deterministic Agent Workflows for Swift`}
-      description="LangGraph for Swift. Build AI agent workflows that produce byte-identical output on every run."
+      title={`${siteConfig.title} — Deterministic Graph Runtime for Swift`}
+      description="Build Swift graph runtimes with atomic supersteps, typed state, checkpoints, interrupts, and deterministic replay."
     >
       <HeroBanner />
       <main>
@@ -151,7 +183,7 @@ export default function Home() {
           <div className="container">
             <h2 className={styles.sectionTitle}>Why Hive?</h2>
             <p className={styles.sectionSubtitle}>
-              Everything you need to build production agent workflows in Swift
+              Runtime primitives for production Swift graph execution
             </p>
           </div>
           <HomepageFeatures />

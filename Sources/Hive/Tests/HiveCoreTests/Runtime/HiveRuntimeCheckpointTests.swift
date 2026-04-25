@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -142,6 +141,8 @@ private enum TestError: Error {
     case loadFailed
 }
 
+@Suite("HiveRuntimeCheckpoint", .serialized)
+struct HiveRuntimeCheckpointTests {
 @Test("Checkpoint persists frontier order + provenance")
 func testCheckpoint_PersistsFrontierOrderAndProvenance() async throws {
     enum Schema: HiveSchema {
@@ -257,7 +258,7 @@ func testCheckpointID_DerivedFromRunIDAndStepIndex() async throws {
     withUnsafeBytes(of: &uuid) { bytes.append(contentsOf: $0) }
     var step = UInt32(checkpoint.stepIndex).bigEndian
     withUnsafeBytes(of: &step) { bytes.append(contentsOf: $0) }
-    let hash = SHA256.hash(data: bytes)
+    let hash = HiveSHA256.hash(data: bytes)
     let expected = hash.map { String(format: "%02x", $0) }.joined()
 
     #expect(checkpoint.id.rawValue == expected)
@@ -450,7 +451,7 @@ func testCheckpoint_PreservesDeferredFrontierAcrossResume() async throws {
     builder.addNode(HiveNodeID("main")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(logKey, ["main"])],
-            next: .nodes([HiveNodeID("summary"), HiveNodeID("cleanup")])
+            next: .to([HiveNodeID("summary"), HiveNodeID("cleanup")])
         )
     }
     builder.addNode(HiveNodeID("summary")) { _ in
@@ -600,6 +601,7 @@ func testCheckpointDecodeFailure_FailsBeforeStep0() async throws {
         if case .checkpointLoaded = event.kind { return true }
         return false
     })
+}
 }
 
 @Test("Checkpoint corrupt join barrier keys mismatch fails before step 0")

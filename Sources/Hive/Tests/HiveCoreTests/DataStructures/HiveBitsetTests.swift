@@ -1,7 +1,7 @@
 import Testing
 @testable import HiveCore
 
-@Suite("HiveBitset")
+@Suite("HiveBitset", .serialized)
 struct HiveBitsetTests {
     @Test("wordCount 0 produces empty bitset")
     func wordCountZeroProducesEmptyBitset() {

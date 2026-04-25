@@ -45,6 +45,8 @@ private func drain(_ stream: AsyncThrowingStream<HiveEvent, Error>) async -> [Hi
 
 /// Tests end-to-end caching behavior: first execution stores result, subsequent calls with
 /// identical store state return cached output without re-executing the node.
+@Suite("HiveRuntimeCacheAndFork", .serialized)
+struct HiveRuntimeCacheAndForkTests {
 @Test("Cache hit returns stored output and skips node execution")
 func testCache_HitSkipsNodeExecution() async throws {
     enum Schema: HiveSchema {
@@ -91,6 +93,7 @@ func testCache_HitSkipsNodeExecution() async throws {
     _ = await drain(h2.events)
     let afterSecond = executionCount.withLock { $0 }
     #expect(afterSecond == 1, "Node must NOT execute on second run with identical store state (cache hit)")
+}
 }
 
 /// Verifies that after a cache hit, the mutated LRU order is written back to `state.nodeCaches`,
@@ -289,7 +292,7 @@ func testDeferredNodes_ExecuteAfterMainFrontier() async throws {
     builder2.addNode(HiveNodeID("main")) { _ in
         HiveNodeOutput(
             writes: [AnyHiveWrite(logKey, ["main"])],
-            next: .nodes([HiveNodeID("summary"), HiveNodeID("cleanup")])
+            next: .to([HiveNodeID("summary"), HiveNodeID("cleanup")])
         )
     }
     builder2.addNode(HiveNodeID("summary")) { _ in
@@ -508,7 +511,7 @@ func testGetState_NextNodesDeduplication() async throws {
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .useGraphEdges) }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
     builder.addEdge(from: HiveNodeID("A"), to: HiveNodeID("B"))
-    builder.addRouter(from: HiveNodeID("A")) { _ in .nodes([HiveNodeID("B")]) }
+    builder.addRouter(from: HiveNodeID("A")) { _ in .to([HiveNodeID("B")]) }
 
     let graph = try builder.compile()
     let runtime = try HiveRuntime(graph: graph, environment: makeEnv2(context: ()))

@@ -15,3 +15,7 @@ docs/plans/
 website/node_modules/
 website/.docusaurus/
 website/build/
+
+# API Analysis Working Documents
+docs/reference/api-surface-catalog.md
+docs/reference/api-improvement-report.md

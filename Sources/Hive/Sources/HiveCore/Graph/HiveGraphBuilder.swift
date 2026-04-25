@@ -16,7 +16,7 @@ public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
     public let runWhen: HiveNodeRunWhen
     public let options: HiveNodeOptions
     public let cachePolicy: HiveCachePolicy<Schema>?
-    public let run: HiveNode<Schema>
+    public let run: NodeAction<Schema>
 
     public init(
         id: HiveNodeID,
@@ -24,7 +24,7 @@ public struct HiveCompiledNode<Schema: HiveSchema>: Sendable {
         runWhen: HiveNodeRunWhen = .always,
         options: HiveNodeOptions = [],
         cachePolicy: HiveCachePolicy<Schema>? = nil,
-        run: @escaping HiveNode<Schema>
+        run: @escaping NodeAction<Schema>
     ) {
         self.id = id
         self.retryPolicy = retryPolicy
@@ -101,7 +101,7 @@ public struct HiveGraphBuilder<Schema: HiveSchema> {
         runWhen: HiveNodeRunWhen = .always,
         options: HiveNodeOptions = [],
         cachePolicy: HiveCachePolicy<Schema>? = nil,
-        _ node: @escaping HiveNode<Schema>
+        _ node: @escaping NodeAction<Schema>
     ) {
         nodeInsertions.append(id)
         nodes[id] = HiveCompiledNode(

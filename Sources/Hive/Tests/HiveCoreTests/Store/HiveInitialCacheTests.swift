@@ -1,13 +1,23 @@
+import Foundation
 import Testing
 @testable import HiveCore
 
 private final class InitialEvalLog: @unchecked Sendable {
+    private let lock = NSLock()
     private(set) var order: [String] = []
     private(set) var counts: [String: Int] = [:]
 
     func record(_ id: String) {
+        lock.lock()
+        defer { lock.unlock() }
         order.append(id)
         counts[id, default: 0] += 1
+    }
+
+    func snapshot() -> (order: [String], counts: [String: Int]) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (order, counts)
     }
 }
 
@@ -65,9 +75,10 @@ func testInitialCache_EvaluatedOnceInLexOrder() throws {
 
     _ = HiveInitialCache(registry: registry)
 
-    #expect(log.order == ["a", "aa", "b", "c"])
-    #expect(log.counts["a"] == 1)
-    #expect(log.counts["aa"] == 1)
-    #expect(log.counts["b"] == 1)
-    #expect(log.counts["c"] == 1)
+    let snapshot = log.snapshot()
+    #expect(snapshot.order == ["a", "aa", "b", "c"])
+    #expect(snapshot.counts["a"] == 1)
+    #expect(snapshot.counts["aa"] == 1)
+    #expect(snapshot.counts["b"] == 1)
+    #expect(snapshot.counts["c"] == 1)
 }

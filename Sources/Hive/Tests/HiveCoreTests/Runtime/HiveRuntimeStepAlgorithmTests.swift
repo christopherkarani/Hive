@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import Testing
 @testable import HiveCore
@@ -48,6 +47,8 @@ private func collectEventsAndError(_ stream: AsyncThrowingStream<HiveEvent, Erro
     }
 }
 
+@Suite("HiveRuntimeStepAlgorithm", .serialized)
+struct HiveRuntimeStepAlgorithmTests {
 @Test("Router fresh read sees own write only")
 func testRouterFreshRead_SeesOwnWriteNotOthers() async throws {
     enum Schema: HiveSchema {
@@ -85,11 +86,11 @@ func testRouterFreshRead_SeesOwnWriteNotOthers() async throws {
 
     builder.addRouter(from: HiveNodeID("A")) { view in
         let value = (try? view.get(valueKey)) ?? 0
-        return value == 1 ? .nodes([HiveNodeID("X")]) : .nodes([HiveNodeID("Y")])
+        return value == 1 ? .to([HiveNodeID("X")]) : .to([HiveNodeID("Y")])
     }
     builder.addRouter(from: HiveNodeID("B")) { view in
         let value = (try? view.get(valueKey)) ?? 0
-        return value == 1 ? .nodes([HiveNodeID("Y")]) : .nodes([HiveNodeID("X")])
+        return value == 1 ? .to([HiveNodeID("Y")]) : .to([HiveNodeID("X")])
     }
 
     let graph = try builder.compile()
@@ -264,7 +265,8 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
 
         func decode(_ data: Data) throws -> Int {
             guard data.count == MemoryLayout<Int64>.size else { throw HiveRuntimeError.invalidRunOptions("bad decode") }
-            let raw = data.withUnsafeBytes { $0.load(as: Int64.self) }
+            var raw: Int64 = 0
+            _ = withUnsafeMutableBytes(of: &raw) { data.copyBytes(to: $0) }
             return Int(Int64(bigEndian: raw))
         }
     }
@@ -324,7 +326,7 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
     guard case let .writeApplied(_, payloadHash) = debugOn.kind else { #expect(Bool(false)); return }
 
     let expectedBytes = withUnsafeBytes(of: Int64(42).bigEndian) { Data($0) }
-    let expectedHash = SHA256.hash(data: expectedBytes).compactMap { String(format: "%02x", $0) }.joined()
+    let expectedHash = HiveSHA256.hash(data: expectedBytes).compactMap { String(format: "%02x", $0) }.joined()
     #expect(payloadHash == expectedHash)
 
     #expect(debugOn.metadata["valueTypeID"] == String(reflecting: Int.self))
@@ -333,25 +335,21 @@ func testDebugPayloads_WriteAppliedMetadata() async throws {
     #expect(debugOn.metadata["payload"] == expectedBytes.base64EncodedString())
 }
 
-@Test("deterministicTokenStreaming buffers and orders stream events")
-func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
+@Test("deterministic stream buffering buffers and orders stream events")
+func testDeterministicStreamBuffering_BuffersStreamEvents() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { input in
-        input.emitStream(.modelInvocationStarted(model: "m"), [:])
-        input.emitStream(.modelToken(text: "A1"), [:])
-        input.emitStream(.modelToken(text: "A2"), [:])
-        input.emitStream(.modelInvocationFinished, [:])
+        input.emitStream(.customDebug(name: "A1"), [:])
+        input.emitStream(.customDebug(name: "A2"), [:])
         try await Task.sleep(nanoseconds: 50_000_000)
         return HiveNodeOutput(next: .end)
     }
     builder.addNode(HiveNodeID("B")) { input in
-        input.emitStream(.modelInvocationStarted(model: "m"), [:])
-        input.emitStream(.modelToken(text: "B1"), [:])
-        input.emitStream(.modelInvocationFinished, [:])
+        input.emitStream(.customDebug(name: "B1"), [:])
         try await Task.sleep(nanoseconds: 5_000_000)
         return HiveNodeOutput(next: .end)
     }
@@ -362,7 +360,7 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     let handle = await runtime.run(
         threadID: HiveThreadID("det-stream"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true)
+        options: HiveRunOptions(deterministicStreamBuffering: true)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
@@ -371,12 +369,8 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
 
     let step0 = events.filter { $0.id.stepIndex == 0 }
     let streamEvents = step0.filter { event in
-        switch event.kind {
-        case .modelInvocationStarted, .modelToken, .modelInvocationFinished, .toolInvocationStarted, .toolInvocationFinished, .customDebug:
-            return true
-        default:
-            return false
-        }
+        if case .customDebug = event.kind { return true }
+        return false
     }
 
     let ordinals = streamEvents.compactMap(\.id.taskOrdinal)
@@ -394,12 +388,8 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     #expect(firstTaskFinishedIndex != nil)
     if let firstTaskFinishedIndex {
         let lastStreamIndex = step0.lastIndex { event in
-            switch event.kind {
-            case .modelInvocationStarted, .modelToken, .modelInvocationFinished, .toolInvocationStarted, .toolInvocationFinished, .customDebug:
-                return true
-            default:
-                return false
-            }
+            if case .customDebug = event.kind { return true }
+            return false
         }
         #expect(lastStreamIndex != nil)
         if let lastStreamIndex {
@@ -408,27 +398,25 @@ func testDeterministicTokenStreaming_BuffersStreamEvents() async throws {
     }
 }
 
-@Test("Backpressure coalesces and drops deterministically")
-func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws {
+@Test("Backpressure drops debug events deterministically")
+func testBackpressure_DebugEventsDropDeterministically() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { input in
-        input.emitStream(.modelToken(text: "A"), [:])
-        input.emitDebug("d", [:])
-        input.emitStream(.modelToken(text: "B"), [:])
-        input.emitStream(.modelToken(text: "C"), [:]) // coalesce into "BC"
-        input.emitDebug("d2", [:]) // drop
+        input.emitDebug("a0", [:])
+        input.emitDebug("a1", [:])
+        input.emitDebug("a2", [:])
+        input.emitDebug("a3", [:]) // drop
         return HiveNodeOutput(next: .end)
     }
     builder.addNode(HiveNodeID("B")) { input in
-        input.emitStream(.modelToken(text: "X"), [:])
-        input.emitStream(.modelToken(text: "Y"), [:])
-        input.emitDebug("d0", [:])
-        input.emitStream(.modelToken(text: "Z"), [:]) // drop
-        input.emitDebug("d1", [:]) // drop
+        input.emitDebug("b0", [:])
+        input.emitDebug("b1", [:])
+        input.emitDebug("b2", [:])
+        input.emitDebug("b3", [:]) // drop
         return HiveNodeOutput(next: .end)
     }
 
@@ -438,7 +426,7 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
     let handle = await runtime.run(
         threadID: HiveThreadID("backpressure"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true, eventBufferCapacity: 3)
+        options: HiveRunOptions(deterministicStreamBuffering: true, eventBufferCapacity: 3)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
@@ -446,13 +434,12 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
     let events = await eventsTask.value
 
     let step0 = events.filter { $0.id.stepIndex == 0 }
-    let backpressureEvents = step0.compactMap { event -> (Int, Int)? in
-        guard case let .streamBackpressure(droppedModelTokenEvents, droppedDebugEvents) = event.kind else { return nil }
-        return (droppedModelTokenEvents, droppedDebugEvents)
+    let backpressureEvents = step0.compactMap { event -> Int? in
+        guard case let .streamBackpressure(droppedDebugEvents) = event.kind else { return nil }
+        return droppedDebugEvents
     }
     #expect(backpressureEvents.count == 1)
-    #expect(backpressureEvents.first?.0 == 1)
-    #expect(backpressureEvents.first?.1 == 2)
+    #expect(backpressureEvents.first == 2)
 
     if let backpressureIndex = step0.firstIndex(where: { if case .streamBackpressure = $0.kind { return true }; return false }),
        let stepFinishedIndex = step0.firstIndex(where: { if case .stepFinished = $0.kind { return true }; return false })
@@ -462,23 +449,26 @@ func testBackpressure_ModelTokensCoalesceAndDropDeterministically() async throws
         #expect(Bool(false))
     }
 
-    let tokenTexts = step0.compactMap { event -> (Int?, String)? in
-        guard case let .modelToken(text) = event.kind else { return nil }
-        return (event.id.taskOrdinal, text)
-    }
-    #expect(tokenTexts.contains { $0.0 == 0 && $0.1.contains("BC") })
-    #expect(tokenTexts.contains { $0.0 == 1 && $0.1 == "Z" } == false)
-    #expect(step0.contains { if case .customDebug(name: "d1") = $0.kind { return true }; return false } == false)
+    #expect(step0.contains { if case .customDebug(name: "a3") = $0.kind { return true }; return false } == false)
+    #expect(step0.contains { if case .customDebug(name: "b3") = $0.kind { return true }; return false } == false)
 }
 
-@Test("deterministicTokenStreaming discards failed-attempt stream buffers")
-func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async throws {
+@Test("deterministic stream buffering discards failed-attempt stream buffers")
+func testDeterministicStreamBuffering_DiscardsFailedAttemptStreamBuffers() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] { [] }
     }
 
     final class Attempts: @unchecked Sendable {
-        var count = 0
+        private let lock = NSLock()
+        private var count = 0
+
+        func next() -> Int {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return count
+        }
     }
     let attempts = Attempts()
 
@@ -487,12 +477,11 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
         HiveNodeID("A"),
         retryPolicy: .exponentialBackoff(initialNanoseconds: 0, factor: 1, maxAttempts: 2, maxNanoseconds: 0)
     ) { input in
-        attempts.count += 1
-        if attempts.count == 1 {
-            input.emitStream(.modelToken(text: "attempt1"), [:])
+        if attempts.next() == 1 {
+            input.emitStream(.customDebug(name: "attempt1"), [:])
             throw HiveRuntimeError.invalidRunOptions("fail once")
         }
-        input.emitStream(.modelToken(text: "attempt2"), [:])
+        input.emitStream(.customDebug(name: "attempt2"), [:])
         return HiveNodeOutput(next: .end)
     }
 
@@ -502,19 +491,19 @@ func testDeterministicTokenStreaming_DiscardsFailedAttemptStreamBuffers() async 
     let handle = await runtime.run(
         threadID: HiveThreadID("retry-stream"),
         input: (),
-        options: HiveRunOptions(deterministicTokenStreaming: true)
+        options: HiveRunOptions(deterministicStreamBuffering: true)
     )
 
     let eventsTask = Task { await collectEvents(handle.events) }
     _ = try await handle.outcome.value
     let events = await eventsTask.value
 
-    let tokenTexts = events.compactMap { event -> String? in
-        guard case let .modelToken(text) = event.kind else { return nil }
-        return text
+    let debugNames = events.compactMap { event -> String? in
+        guard case let .customDebug(name) = event.kind else { return nil }
+        return name
     }
-    #expect(tokenTexts.contains("attempt1") == false)
-    #expect(tokenTexts.contains("attempt2"))
+    #expect(debugNames.contains("attempt1") == false)
+    #expect(debugNames.contains("attempt2"))
 
     let startedCount = events.filter { if case .taskStarted = $0.kind { return true }; return false }.count
     let finishedCount = events.filter { if case .taskFinished = $0.kind { return true }; return false }.count
@@ -527,14 +516,22 @@ func testRouterFreshRead_ErrorAbortsStep() async throws {
     enum Schema: HiveSchema {
         static var channelSpecs: [AnyHiveChannelSpec<Schema>] {
             final class ThrowOnce: @unchecked Sendable {
-                var hasThrown = false
+                private let lock = NSLock()
+                private var hasThrown = false
+
+                func consumeNextState() -> Bool {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    let current = hasThrown
+                    hasThrown = true
+                    return current
+                }
             }
             let state = ThrowOnce()
             let reducer = HiveReducer<Int> { current, update in
-                if state.hasThrown {
+                if state.consumeNextState() {
                     throw HiveRuntimeError.invalidRunOptions("router view error")
                 }
-                state.hasThrown = true
                 return current + update
             }
             let key = HiveChannelKey<Schema, Int>(HiveChannelID("value"))
@@ -560,7 +557,7 @@ func testRouterFreshRead_ErrorAbortsStep() async throws {
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
-    builder.addRouter(from: HiveNodeID("A")) { _ in .nodes([HiveNodeID("B")]) }
+    builder.addRouter(from: HiveNodeID("A")) { _ in .to([HiveNodeID("B")]) }
 
     let graph = try builder.compile()
     let runtime = try HiveRuntime(graph: graph, environment: makeEnvironment(context: ()))
@@ -699,7 +696,7 @@ func testDedupe_GraphSeedsOnly() async throws {
                 HiveTaskSeed(nodeID: HiveNodeID("C")),
                 HiveTaskSeed(nodeID: HiveNodeID("C"))
             ],
-            next: .nodes([HiveNodeID("B"), HiveNodeID("B")])
+            next: .to([HiveNodeID("B"), HiveNodeID("B")])
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
@@ -736,7 +733,7 @@ func testFrontierOrdering_GraphBeforeSpawn() async throws {
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(
             spawn: [HiveTaskSeed(nodeID: HiveNodeID("C"))],
-            next: .nodes([HiveNodeID("B")])
+            next: .to([HiveNodeID("B")])
         )
     }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
@@ -773,7 +770,7 @@ func testJoinBarrier_IncludesSpawnParents() async throws {
     builder.addNode(HiveNodeID("S")) { _ in
         HiveNodeOutput(
             spawn: [HiveTaskSeed(nodeID: HiveNodeID("B"))],
-            next: .nodes([HiveNodeID("A")])
+            next: .to([HiveNodeID("A")])
         )
     }
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
@@ -810,7 +807,7 @@ func testJoinBarrier_TargetRunsEarly_DoesNotReset() async throws {
 
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("S")])
     builder.addNode(HiveNodeID("S")) { _ in
-        HiveNodeOutput(next: .nodes([HiveNodeID("J"), HiveNodeID("A")]))
+        HiveNodeOutput(next: .to([HiveNodeID("J"), HiveNodeID("A")]))
     }
     builder.addNode(HiveNodeID("A")) { _ in
         HiveNodeOutput(spawn: [HiveTaskSeed(nodeID: HiveNodeID("B"))])
@@ -854,7 +851,7 @@ func testJoinBarrier_ConsumeOnlyWhenAvailable() async throws {
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A"), HiveNodeID("B")])
     builder.addNode(HiveNodeID("A")) { _ in HiveNodeOutput(next: .end) }
     builder.addNode(HiveNodeID("B")) { _ in HiveNodeOutput(next: .end) }
-    builder.addNode(HiveNodeID("J")) { _ in HiveNodeOutput(next: .nodes([HiveNodeID("A"), HiveNodeID("B")])) }
+    builder.addNode(HiveNodeID("J")) { _ in HiveNodeOutput(next: .to([HiveNodeID("A"), HiveNodeID("B")])) }
     builder.addJoinEdge(parents: [HiveNodeID("A"), HiveNodeID("B")], target: HiveNodeID("J"))
 
     let graph = try builder.compile()
@@ -950,4 +947,5 @@ func testUnknownChannelWrite_FailsNoCommit() async throws {
     } else {
         #expect(Bool(false))
     }
+}
 }

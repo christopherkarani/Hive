@@ -8,12 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 swift build                              # Build all targets
 swift test                               # Run all tests
 swift test --filter HiveCoreTests        # Run a single test target
-swift test --filter HiveDSLTests         # Other targets: HiveConduitTests, HiveCheckpointWaxTests,
-                                         #   HiveRAGWaxTests, HiveTests
+swift test --filter HiveTests            # Umbrella module smoke tests
 swift run HiveTinyGraphExample           # Run the example executable
 ```
 
-Swift 6.2 toolchain required. Platforms: iOS 26+, macOS 26+.
+Swift 6.2 toolchain required. Core runtime targets macOS and Linux.
 
 ## Project Structure
 
@@ -22,30 +21,22 @@ All source and tests live under `Sources/Hive/`:
 ```
 Sources/Hive/
 ├── Sources/
-│   ├── HiveCore/          # Zero-dependency core (schema, graph, runtime, store)
-│   ├── HiveDSL/           # Result-builder workflow DSL (depends on HiveCore)
-│   ├── HiveConduit/       # Conduit model client adapter (LLM integration)
-│   ├── HiveCheckpointWax/ # Wax-backed persistent checkpoints
-│   ├── HiveRAGWax/        # Wax-backed vector RAG
-│   └── Hive/              # Umbrella — re-exports Core + DSL + adapters
+│   ├── HiveCore/          # Schema, graph, runtime, store, checkpoint protocols
+│   └── Hive/              # Umbrella - re-exports HiveCore
 ├── Tests/
 │   ├── HiveCoreTests/     # Runtime, schema, store, graph, errors, data structures
-│   ├── HiveDSLTests/      # Workflow compilation, patching
-│   ├── HiveConduitTests/  # Model client streaming
-│   ├── HiveCheckpointWaxTests/
-│   ├── HiveRAGWaxTests/
 │   └── HiveTests/         # Integration tests
 └── Examples/TinyGraph/    # Executable example (fan-out, join, interrupt)
 ```
 
-External dependencies: `Conduit` (LLM adapter) and `Wax` (checkpoint/RAG persistence).
+External dependency: `swift-crypto` for cross-platform SHA-256.
 
 ## Architecture
 
-Hive executes agent workflows as **deterministic superstep graphs** using the Bulk Synchronous Parallel (BSP) model:
+Hive executes **deterministic superstep graphs** using the Bulk Synchronous Parallel (BSP) model:
 
 1. **Schema** — `HiveSchema` protocol declares typed channels with reducers, scopes, and codecs
-2. **Graph** — Built via `HiveGraphBuilder` (imperative) or `Workflow<Schema> { ... }` (DSL)
+2. **Graph** — Built via `HiveGraphBuilder`
 3. **Runtime** — `HiveRuntime` actor executes supersteps: frontier nodes run concurrently, writes commit atomically, routers schedule next frontier
 4. **Store** — `HiveGlobalStore` (shared state) + `HiveTaskLocalStore` (per-task overlay for fan-out) + `HiveStoreView` (read-only merged view for nodes)
 5. **Events** — Rich `AsyncThrowingStream` of typed events for observation
@@ -59,29 +50,18 @@ Hive executes agent workflows as **deterministic superstep graphs** using the Bu
 | `Graph/` | Graph builder, graph description (deterministic JSON), Mermaid export, ordering, versioning |
 | `Runtime/` | Superstep execution, frontier computation, event streaming, interrupts, retry, task management |
 | `Checkpointing/` | Checkpoint format and store protocol |
-| `HybridInference/` | Model tool loop (ReAct), inference types |
-| `Memory/` | Memory store protocol, in-memory implementation |
-| `DataStructures/` | Bitset, inverted index |
+| `DataStructures/` | Bitset |
 | `Errors/` | Runtime errors, error descriptions, checkpoint query errors |
-
-### HiveDSL Components (`Sources/Hive/Sources/HiveDSL/`)
-
-- `Workflow<Schema> { ... }.compile()` — Main entry point using `@resultBuilder`
-- `Node("id") { ... }.start()` — Processing step (`.start()` marks entry point)
-- `Edge`, `Join`, `Chain`, `Branch` — Routing primitives
-- `Effects { Set(...); GoTo(...); End() }` — Write + routing DSL
-- `ModelTurn` — LLM integration with tool calling and agent loops
-- `SpawnEach` — Fan-out to parallel workers with task-local state
 
 ### Key Execution Flow
 
 ```
-Schema defines channels → Graph compiled from DSL/builder → Runtime executes supersteps:
+Schema defines channels → Graph compiled from builder → Runtime executes supersteps:
   1. Frontier nodes execute concurrently (lexicographic order for determinism)
   2. Writes collected, reduced, committed atomically
   3. Routers run on fresh post-commit state
   4. Next frontier scheduled
-  5. Repeat until End() or Interrupt()
+5. Repeat until `Route.end` or interrupt
 ```
 
 ## Determinism Guarantees
@@ -132,7 +112,7 @@ The `HiveCoreTests` target has a compiler flag: `HIVE_V11_TRIGGERS`.
 
 ## Claude Code Skills
 
-Available via `/hive`, `/hive-test`, `/hive-schema`, `/hive-workflow`, `/hive-verify`. Use these for scaffolding tests, generating schemas, creating workflows, and verifying spec compliance.
+Use current project skills only after confirming they describe the cleaned core runtime surface.
 
 ## Conventions
 

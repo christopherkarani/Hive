@@ -8,14 +8,14 @@ public struct HiveNodeID: Hashable, Codable, Sendable {
 }
 
 /// Routing decision for the next frontier.
-public enum HiveNext: Sendable, Equatable {
+public enum Route: Sendable, Equatable {
     case useGraphEdges
     case end
-    case nodes([HiveNodeID])
+    case to([HiveNodeID])
 
-    var normalized: HiveNext {
+    var normalized: Route {
         switch self {
-        case .nodes(let nodes) where nodes.isEmpty:
+        case .to(let nodes) where nodes.isEmpty:
             return .end
         default:
             return self
@@ -23,5 +23,17 @@ public enum HiveNext: Sendable, Equatable {
     }
 }
 
+extension Route: ExpressibleByStringLiteral {
+    public init(stringLiteral value: String) {
+        self = .to([HiveNodeID(value)])
+    }
+}
+
+extension Route: ExpressibleByArrayLiteral {
+    public init(arrayLiteral elements: HiveNodeID...) {
+        self = .to(elements)
+    }
+}
+
 /// Deterministic router used to select next nodes for a task.
-public typealias HiveRouter<Schema: HiveSchema> = @Sendable (HiveStoreView<Schema>) -> HiveNext
+public typealias HiveRouter<Schema: HiveSchema> = @Sendable (HiveStoreView<Schema>) -> Route

@@ -64,6 +64,8 @@ private struct MarkerError: Error, Equatable, Sendable {
 
 private struct ReducerBoom: Error, Equatable, Sendable {}
 
+@Suite("HiveRuntimeErrorsRetriesCancellationLimits", .serialized)
+struct HiveRuntimeErrorsRetriesCancellationLimitsTests {
 @Test("Multiple task failures throw smallest taskOrdinal error")
 func testMultipleTaskFailures_ThrowsEarliestOrdinalError() async throws {
     enum Schema: HiveSchema {
@@ -427,7 +429,7 @@ func testOutOfSteps_StopsWithoutExecutingAnotherStep() async throws {
     var builder = HiveGraphBuilder<Schema>(start: [HiveNodeID("A")])
     builder.addNode(HiveNodeID("A")) { _ in
         // Keep scheduling work so maxSteps is the stop condition.
-        HiveNodeOutput(writes: [AnyHiveWrite(xKey, 1)], next: .nodes([HiveNodeID("A")]))
+        HiveNodeOutput(writes: [AnyHiveWrite(xKey, 1)], next: .to([HiveNodeID("A")]))
     }
 
     let graph = try builder.compile()
@@ -703,4 +705,5 @@ func testCancellationDuringStep_EmitsTaskFailedForAllFrontierTasks_InOrdinalOrde
     if let store {
         #expect(try store.get(xKey) == 0)
     }
+}
 }

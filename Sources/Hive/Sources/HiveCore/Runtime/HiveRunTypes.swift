@@ -29,6 +29,7 @@ public struct HiveRunHandle<Schema: HiveSchema>: Sendable {
     public let attemptID: HiveRunAttemptID
     public let events: AsyncThrowingStream<HiveEvent, Error>
     public let outcome: Task<HiveRunOutcome<Schema>, Error>
+    private let streamController: HiveEventStreamController?
 
     public init(
         runID: HiveRunID,
@@ -40,6 +41,21 @@ public struct HiveRunHandle<Schema: HiveSchema>: Sendable {
         self.attemptID = attemptID
         self.events = events
         self.outcome = outcome
+        self.streamController = nil
+    }
+
+    init(
+        runID: HiveRunID,
+        attemptID: HiveRunAttemptID,
+        events: AsyncThrowingStream<HiveEvent, Error>,
+        outcome: Task<HiveRunOutcome<Schema>, Error>,
+        streamController: HiveEventStreamController
+    ) {
+        self.runID = runID
+        self.attemptID = attemptID
+        self.events = events
+        self.outcome = outcome
+        self.streamController = streamController
     }
 }
 

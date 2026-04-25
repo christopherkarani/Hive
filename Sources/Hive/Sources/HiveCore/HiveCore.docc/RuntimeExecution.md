@@ -58,11 +58,7 @@ public struct HiveEnvironment<Schema: HiveSchema>: Sendable {
     public let context: Schema.Context
     public let clock: any HiveClock
     public let logger: any HiveLogger
-    public let model: AnyHiveModelClient?
-    public let modelRouter: (any HiveModelRouter)?
-    public let tools: AnyHiveToolRegistry?
     public let checkpointStore: AnyHiveCheckpointStore<Schema>?
-    public let memoryStore: AnyHiveMemoryStore?
 }
 ```
 
@@ -145,7 +141,7 @@ Sources for the next frontier:
 
 1. **Static edges** — `graph.staticEdgesByFrom[nodeID]`
 2. **Routers** — dynamic routing on post-commit state
-3. **Node output `next`** — `.end`, `.nodes([...])`, or `.useGraphEdges`
+3. **Node output `next`** — `.end`, `.to([...])`, or `.useGraphEdges`
 4. **Spawn seeds** — fan-out tasks with task-local state
 5. **Join barriers** — fire when all parents complete
 
@@ -162,8 +158,8 @@ Seeds are deduplicated by `(nodeID, taskLocalFingerprint)`.
 | Task | `taskStarted`, `taskFinished`, `taskFailed` |
 | Writes | `writeApplied` |
 | Checkpoint | `checkpointSaved`, `checkpointLoaded` |
-| Model | `modelInvocationStarted`, `modelToken`, `modelInvocationFinished` |
-| Tools | `toolInvocationStarted`, `toolInvocationFinished` |
+| Snapshots | `storeSnapshot`, `channelUpdates` |
+| Debug | `customDebug`, `streamBackpressure` |
 
 ### Streaming modes
 
@@ -182,7 +178,7 @@ let options = HiveRunOptions(
     maxConcurrentTasks: 4,
     checkpointPolicy: .everyStep,
     debugPayloads: true,
-    deterministicTokenStreaming: true,
+    deterministicStreamBuffering: true,
     eventBufferCapacity: 2048,
     streamingMode: .combined
 )

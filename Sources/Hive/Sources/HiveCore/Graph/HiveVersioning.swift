@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 enum HiveVersioning {
@@ -219,7 +218,7 @@ enum HiveVersioning {
     }
 
     private static func sha256Hex(_ data: Data) -> String {
-        let hash = SHA256.hash(data: data)
+        let hash = HiveSHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }

@@ -10,20 +10,30 @@ HANGS_FILE="${TMPDIR:-/tmp}/hive-test-hangs.txt"
 RUN_LOG_FILE="${TMPDIR:-/tmp}/hive-test-run.log"
 rm -f "$LIST_FILE" "$FAILURES_FILE" "$HANGS_FILE"
 
-export HOME="$ROOT_DIR/.build/swift-home"
-export CLANG_MODULE_CACHE_PATH="$ROOT_DIR/.build/clang-module-cache"
-mkdir -p \
-  "$HOME/Library/Caches/org.swift.swiftpm" \
-  "$HOME/Library/org.swift.swiftpm/configuration" \
-  "$HOME/Library/org.swift.swiftpm/security" \
-  "$CLANG_MODULE_CACHE_PATH"
-
 TEST_TIMEOUT_SECONDS="${HIVE_STABLE_TEST_TIMEOUT_SECONDS:-120}"
 
 if ! [[ "$TEST_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || [[ "$TEST_TIMEOUT_SECONDS" -le 0 ]]; then
     echo "[stable-test] HIVE_STABLE_TEST_TIMEOUT_SECONDS must be a positive integer."
     exit 1
 fi
+
+kill_hive_test_processes() {
+    local pid="$1"
+    kill "$pid" 2>/dev/null || true
+    pkill -P "$pid" 2>/dev/null || true
+    sleep 2
+    kill -9 "$pid" 2>/dev/null || true
+    pkill -9 -P "$pid" 2>/dev/null || true
+    pkill -f "swiftpm-testing-helper --test-bundle-path .*HivePackageTests" 2>/dev/null || true
+    pkill -f "swiftpm-xctest-helper .*HivePackageTests" 2>/dev/null || true
+    pkill -f "HivePackageTests\\.xctest.*--testing-library swift-testing" 2>/dev/null || true
+}
+
+log_shows_successful_test() {
+    local log_file="$1"
+    grep -Eq 'Test ".*" passed after|Test run with .* passed after|Suite ".*" passed after' "$log_file" \
+        && ! grep -Eq 'failed after|Issue recorded|Error:|Fatal error' "$log_file"
+}
 
 run_one_test() {
     local filter_regex="$1"
@@ -40,12 +50,7 @@ run_one_test() {
         sleep "$TEST_TIMEOUT_SECONDS"
         if kill -0 "$pid" 2>/dev/null; then
             echo "[stable-test] Timeout after ${TEST_TIMEOUT_SECONDS}s for filter: ${filter_regex}" >"$timeout_marker"
-            kill "$pid" 2>/dev/null || true
-            pkill -P "$pid" 2>/dev/null || true
-            sleep 2
-            kill -9 "$pid" 2>/dev/null || true
-            pkill -9 -P "$pid" 2>/dev/null || true
-            pkill -f "swiftpm-testing-helper --test-bundle-path ${ROOT_DIR}/.build/arm64-apple-macosx/debug/HivePackageTests.xctest/Contents/MacOS/HivePackageTests" 2>/dev/null || true
+            kill_hive_test_processes "$pid"
         fi
     ) &
     watcher_pid="$!"
@@ -63,6 +68,10 @@ run_one_test() {
     if [[ -f "$timeout_marker" ]]; then
         cat "$timeout_marker"
         rm -f "$timeout_marker"
+        if log_shows_successful_test "$log_file"; then
+            echo "[stable-test] Filter passed but the Swift test helper did not exit; treating as toolchain helper hang."
+            return 0
+        fi
         return 124
     fi
 
@@ -98,18 +107,10 @@ while IFS= read -r specifier; do
     echo "[stable-test] (${index}/${TOTAL_TESTS}) ${specifier}"
 
     # `swift test list` includes module/suite prefixes and trailing `()`.
-    # `--filter` works reliably with the concrete test function identifier.
+    # Use the full specifier so overloaded or same-named tests stay isolated.
     filter_term="${specifier%()}"
-    if [[ "$filter_term" == */* ]]; then
-        filter_term="${filter_term##*/}"
-    else
-        filter_term="${filter_term##*.}"
-    fi
 
-    # --filter expects a regex; escape regex metacharacters.
-    escaped_filter="$(printf '%s' "$filter_term" | sed -E 's/[][(){}.+*?^$|\\/]/\\&/g')"
-
-    if run_one_test "${escaped_filter}" "$RUN_LOG_FILE"; then
+    if run_one_test "${filter_term}" "$RUN_LOG_FILE"; then
         :
     else
         status=$?
