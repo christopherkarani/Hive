@@ -1,5 +1,5 @@
 {
-  "originHash" : "57d56e28c03f00b00bd0ad228f2bbf4fb26ee708e6360faab6a7990dbdc6d58d",
+  "originHash" : "03c8fef26e8f40799dbfe4a23b83f4e830b4a0c9902ad5b48ab8a1a26b0b7202",
   "pins" : [
     {
       "identity" : "swift-asn1",
@@ -35,6 +35,15 @@
       "state" : {
         "revision" : "b45d1f2ed151d057b54504d653e0da5552844e34",
         "version" : "1.0.0"
+      }
+    },
+    {
+      "identity" : "swift-mutex",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swhitty/swift-mutex.git",
+      "state" : {
+        "revision" : "1770152df756b54c28ef1787df1e957d93cc62d5",
+        "version" : "0.0.6"
       }
     }
   ],

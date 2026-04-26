@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import Mutex
 
 // MARK: - HiveRuntime
 

@@ -6,13 +6,14 @@ import PackageDescription
 let packageDependencies: [Package.Dependency] = [
     .package(url: "https://github.com/apple/swift-crypto.git", from: "3.7.0"),
     .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.4.3"),
+    .package(url: "https://github.com/swhitty/swift-mutex.git", from: "0.0.6"),
 ]
 
 let package = Package(
     name: "Hive",
     platforms: [
-        .iOS(.v26),
-        .macOS(.v26),
+        .iOS(.v17),
+        .macOS(.v14),
     ],
     products: [
         .library(name: "Hive", targets: ["Hive"]),
@@ -25,6 +26,7 @@ let package = Package(
             name: "HiveCore",
             dependencies: [
                 .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "Mutex", package: "swift-mutex"),
             ],
             path: "Sources/Hive/Sources/HiveCore",
             exclude: ["README.md"]
@@ -42,13 +44,16 @@ let package = Package(
         ),
         .testTarget(
             name: "HiveCoreTests",
-            dependencies: ["HiveCore"],
+            dependencies: [
+                "HiveCore",
+                .product(name: "Mutex", package: "swift-mutex")
+            ],
             path: "Sources/Hive/Tests/HiveCoreTests",
             resources: [
-                .process("Runtime/Fixtures"),
+                .process("Runtime/Fixtures")
             ],
             swiftSettings: [
-                .define("HIVE_V11_TRIGGERS"),
+                .define("HIVE_V11_TRIGGERS")
             ]
         ),
         .testTarget(
