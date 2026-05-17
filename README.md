@@ -73,8 +73,8 @@ let runtime = try HiveRuntime(
 | Platform | Min Version |
 | --- | --- |
 | Swift | 6.2 |
-| iOS | 26.0+ |
-| macOS | 26.0+ |
+| iOS | 17.0+ |
+| macOS | 14.0+ |
 | Linux | Swift 6.2 toolchain |
 
 ## Run
@@ -82,7 +82,7 @@ let runtime = try HiveRuntime(
 ```sh
 swift build
 swift run HiveTinyGraphExample
-swift test --filter HiveCoreTests
+swift test
 ```
 
 ## Documentation

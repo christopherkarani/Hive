@@ -14,13 +14,13 @@
 </head>
 <body>
   <h1>Hive Documentation</h1>
-  <p>Hive is a deterministic Swift graph runtime. It provides typed schemas, reducers, graph building, routing, fan-out/join, checkpoint protocols, interrupts/resume, replay-friendly events, stores, cache/retry/run options, and a tiny <code>Hive</code> umbrella module that re-exports <code>HiveCore</code>.</p>
+  <p>Hive is a deterministic Swift graph runtime. It provides typed schemas, reducers, graph building, routing, fan-out/join, checkpoint protocols, interrupts/resume, replay-friendly events, stores, and cache/retry/run options. The <code>Hive</code> product is the package-level import for that runtime and re-exports <code>HiveCore</code>.</p>
   <p>This package intentionally does not ship a workflow DSL, model/tool calling APIs, RAG memory, Conduit adapters, or Wax adapters.</p>
 
   <h2>Modules</h2>
   <ul>
     <li><code>HiveCore</code>: core runtime surface.</li>
-    <li><code>Hive</code>: umbrella module that only re-exports <code>HiveCore</code>.</li>
+    <li><code>Hive</code>: package-level runtime module that re-exports <code>HiveCore</code>.</li>
     <li><code>HiveTinyGraphExample</code>: executable example covering fan-out, join, interrupt, checkpoint, and resume.</li>
   </ul>
 
@@ -29,7 +29,7 @@
 swift build --target HiveCore
 swift build --target Hive
 swift run HiveTinyGraphExample
-swift test --filter HiveCoreTests</code></pre>
+swift test</code></pre>
 
   <h2>Minimal Graph</h2>
   <pre><code>import HiveCore

@@ -26,4 +26,4 @@ let graph = try builder.compile()
 - Typed channel state with explicit reducers
 - Fan-out and join barriers
 - Interrupt/resume and checkpoint protocol support
-- Linux-capable core runtime with Swift 6.2
+- Linux-capable `Hive` package with Swift 6.2

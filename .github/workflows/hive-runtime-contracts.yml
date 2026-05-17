@@ -10,7 +10,7 @@ on:
       - "Package.swift"
       - "Package.resolved"
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   contract-suite:
@@ -40,8 +40,8 @@ jobs:
       - name: Run full suite
         run: HIVE_FULL_SUITE_TIMEOUT_SECONDS=180 ./scripts/test-full-suite.sh
 
-  linux-core:
-    name: Linux Core Runtime
+  linux-runtime:
+    name: Linux Runtime
     runs-on: ubuntu-latest
     container:
       image: swift:6.2-noble
@@ -54,5 +54,5 @@ jobs:
         run: swift build --target Hive
       - name: Run tiny graph example
         run: swift run HiveTinyGraphExample
-      - name: Test HiveCore
+      - name: Test Hive package
         run: HIVE_FULL_SUITE_TIMEOUT_SECONDS=180 ./scripts/test-full-suite.sh

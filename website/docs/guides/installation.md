@@ -9,7 +9,7 @@ Hive requires Swift 6.2.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/christopherkarani/Hive.git", from: "1.0.0")
+    .package(url: "https://github.com/christopherkarani/Hive.git", from: "0.2.1")
 ]
 ```
 
@@ -28,5 +28,5 @@ Use the umbrella product or the core product directly:
 swift build --target HiveCore
 swift build --target Hive
 swift run HiveTinyGraphExample
-swift test --filter HiveCoreTests
+swift test
 ```

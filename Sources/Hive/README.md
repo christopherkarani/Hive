@@ -22,4 +22,6 @@ let graph = try builder.compile()
 | `HiveCore` | Core graph runtime |
 | `HiveTinyGraphExample` | Runnable core runtime example |
 
+Both `Hive` and `HiveCore` build on Linux with the Swift 6.2 toolchain.
+
 Hive does not ship a workflow DSL, model/tool calling, RAG memory, or provider adapters.

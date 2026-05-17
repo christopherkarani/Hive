@@ -24,7 +24,7 @@ The cleanup pass has already made the largest API improvement: Hive is now a foc
 | Chat/tool abstractions | Removed from `HiveCore`. |
 | Long-term memory helpers | Removed from `HiveCore`. |
 | Cross-platform hashing | Added internal SHA-256 compatibility wrapper over Apple CryptoKit and swift-crypto. |
-| Linux validation | Core build, umbrella build, example run, and core tests pass in Swift 6.2 Noble. |
+| Linux validation | `HiveCore` build, `Hive` build, example run, and full package tests pass in Swift 6.2 Noble. |
 
 ## Highest-Value Follow-Up Improvements
 

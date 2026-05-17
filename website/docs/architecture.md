@@ -5,10 +5,10 @@ description: Hive package and runtime architecture.
 
 # Architecture
 
-Hive is split into a tiny umbrella module and the core runtime:
+Hive exposes one package-level runtime import plus the underlying core module:
 
 ```text
-Hive      re-exports HiveCore
+Hive      package-level runtime import; re-exports HiveCore
 HiveCore  schemas, graph compiler, runtime, events, checkpoint protocols
 ```
 

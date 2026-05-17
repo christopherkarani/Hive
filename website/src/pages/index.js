@@ -110,10 +110,10 @@ function HeroBanner() {
             Swift 6.2
           </span>
           <span className={clsx(styles.badge, styles.badgePlatform)}>
-            iOS 26+
+            iOS 17+
           </span>
           <span className={clsx(styles.badge, styles.badgePlatform)}>
-            macOS 26+
+            macOS 14+
           </span>
           <span className={clsx(styles.badge, styles.badgeLicense)}>MIT</span>
         </div>
@@ -136,7 +136,7 @@ function HeroBanner() {
         <div className={styles.installSnippet}>
           <code>
             .package(url: "https://github.com/christopherkarani/Hive.git",
-            from: "1.0.0")
+            from: "0.2.1")
           </code>
         </div>
       </div>
